@@ -1,0 +1,72 @@
+# Coge Canon - Edge Brain Execution Layer
+
+```yaml
+header:
+  id: COGE_CANON
+  intent: SPEC
+  version: v1.0.0
+```
+
+## Coge Responsibilities (Per Era 5)
+
+```yaml
+coge:
+  purpose:
+    - parse SIO intent
+    - classify complexity
+    - hydrate context
+    - route to Brain or Cloud
+```
+
+## Coge Flow
+
+```text
+Intent
+  ↓
+SIO Parser
+  ↓
+CAT Router
+  ↓
+Capacity Estimator
+  ↓
+Brain (local) or Cloud (remote)
+```
+
+## Coge + CAT Integration
+
+```rust
+// Coge dispatch via CAT
+pub enum CogeIntent {
+    BrainPrompt,
+    BrainModelVerify,
+    BrainReplayRun,
+    ZeusForward,
+}
+
+pub fn dispatch(intent: &str, payload: &str) -> Result<Vec<u32>, &'static str> {
+    match intent {
+        "brain.prompt" => CatDispatcher::dispatch("prompt", payload),
+        "brain.model.verify" => CatDispatcher::dispatch("model.verify", payload),
+        "brain.replay.run" => CatDispatcher::dispatch("replay.run", payload),
+        _ => Err("route_to_zeus"),
+    }
+}
+```
+
+## Predefined CAT Registry
+
+| Intent | Manifest | Renderer |
+|--------|----------|----------|
+| brain.prompt | `brain_prompt()` | CLI/Chat/HTML |
+| brain.model.verify | `brain_model_verify()` | CLI |
+| brain.replay.run | `brain_replay_run()` | CLI |
+
+## Integration Points
+
+```text
+brain/cli  →  Coge  →  fem/cat
+              ↑
+        SIO parser
+        CAT dispatcher
+        Capacity estimator
+```

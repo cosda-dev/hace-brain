@@ -1,0 +1,233 @@
+---
+# CSA BRAIN BLUEPRINT â€” v2 (Era-5 Update)
+# Canon Architecture â€” hace Dynamic Cognitive Runtime + CAT + Coge + Multi-Soul
+
+```yaml
+artifact_id: csa-brain-blueprint-v2
+supersedes: csa-brain-blueprint-v1.ail
+change_reason: Supreme Alliance Directive cmd.zeus.soul-sovereignty.v1 (CGE)
+delta_summary: "Integrate CAT+Coge+CapacityOrch+SoulRegistry; freeze LoRA tuning layer"
+datetime: "2026-06-05"
+locale: en-core / vi-85
+format: AIL
+status: ACTIVE
+```
+
+---
+
+## AXIOMS UPDATE (additions to B0)
+
+```yaml
+A7: "CAT is the routing key. CogeBridge.execute(intent) must resolve via CatRegistry, not raw string match."
+A8: "CapacityOrch gates EVERY Brain call. BrainTier is never hardcoded."
+A9: "Soul = SKB profile registry. Activate/deactivate on workspace switch. NOT monolithic."
+A10: "LoRA tuning pipelines FROZEN. fem/lora structural code preserved. No adapter injection scripts."
+A11: "SIO is the only cross-boundary currency. NIO exits at Coge input gate only."
+```
+
+---
+
+## ERA-5 SYSTEM TOPOLOGY (update to B1)
+
+```
+HI -- NIO -->
+  COGE (TEE local, 0.5-1B)
+    CatRegistry::resolve(ns,cmd)   -> CatManifest
+    CapacityEstimator::score(sio)  -> BrainTier
+    SkbHydrator::hydrate(sio_v1)   -> SIO_v2
+    BrainRouter::dispatch(sio_v2)  -> TeleportPlan
+    CatRenderer::render(plan, surf) -> HI_output
+      |
+  SOUL REGISTRY (Multi-profile SKB)
+    dev-soul.skb | gov-soul.skb | runtime-soul.skb | biz-soul.skb
+    hot-plug (<5ms), active_profiles -> SkbBundle -> SIO_v2.context
+      |
+  CAPACITY ORCH (no_std Rust gate)
+    score(graph_nodes, authority, apa_budget) -> BrainTier
+      |
+  ZEUS BRAIN (selected tier)
+    base.gguf (FIXED) + cosda.lro (SKILL patterns)
+    -> TeleportPlan {goal, tasks[], execution_order}
+      |
+  AURA ORCH
+    decompose(plan) -> SubDecree[] -> parallel sub-agents
+      |
+  NKC TRIAL -> ConformanceResult -> Coge render -> HI
+
+FROZEN_LAYER (structural preserved, active dev halted):
+  fem/lora   -- LoRA/DoRA/SLoRA skeleton (FROZEN)
+  fem/kvm    -- KV Cache skeleton (FROZEN, unblocked when LoRA resumes)
+  brain/coge/lora.rs -- deprecated, keep #[deprecated] marker
+```
+
+---
+
+## MODULE REGISTRY UPDATE (era-5 state)
+
+```yaml
+# NEW modules (era-5)
+hace-fem-cat:
+  path: engine/hace/fem/cat
+  status: PARTIAL (38%)
+  files_exist: [lib.rs, parser.rs, manifest.rs, example.cat.ail]
+  files_missing: [registry.rs, renderer.rs, validator.rs]
+  critical_gap: parser.rs returns default_cat_data â€” YAML contract NOT parsed
+
+hace-brain-coge:
+  path: engine/hace/brain/coge
+  status: SKELETON (20%)
+  files_exist: [mod.rs, cat_dispatcher.rs, run.rs, infer.rs, lora.rs]
+  files_missing: [capacity.rs, hydrator.rs, renderer.rs, registry.rs]
+  critical_gap: cat_dispatcher.rs is STUB â€” never calls fem-cat parser
+
+hace-brain-capacity: (CREATE)
+  path: engine/hace/brain/capacity
+  role: CapacityOrch â€” complexity score + APA gate + BrainTier select
+  no_std: true
+
+hace-soul-registry: (CREATE)
+  path: engine/hace/soul/registry
+  role: SoulRegistry â€” multi-profile SKB hot-plug controller
+
+# FROZEN modules (structural preserved)
+hace-fem-lora:
+  status: FROZEN (structural complete, tuning halted)
+hace-fem-kvm:
+  status: FROZEN (skeleton, unblocked when LoRA resumes)
+
+# UNCHANGED modules
+hace-brain-base:     PARTIAL (TeleportPlan struct still missing)
+hace-brain-master:   COORDINATOR_ONLY (HacedleBridge stub)
+hace-brain-ops:      STRUCTURALLY_COMPLETE (parity pending)
+hace-soul-orch:      ACTIVE (SKB hydration gap still exists)
+hace-fem-hacedle:    MOST_MATURE (GGUF parse gap still exists)
+hace-fem-skb:        COMPILER_READY (not wired to soul/orch)
+hace-fem-sio:        SCHEMA_DEFINED (not enforced as transport)
+```
+
+---
+
+## GAP MATRIX UPDATE (era-5 new criticals)
+
+```yaml
+NEW_CRITICAL (era-5):
+  G-E1:
+    title: CatRegistry missing â€” Coge cannot resolve namespace.command
+    path: fem/cat/src/registry.rs (create)
+    impact: all "hace brain *" via CAT routing broken
+    fix: CatRegistry::scan_dir() + resolve(ns,cmd) -> CatManifest
+
+  G-E2:
+    title: AilParser.parse() returns default_cat_data â€” YAML not parsed
+    path: fem/cat/src/parser.rs
+    impact: no real CAT contract loaded, all routing uses hardcoded defaults
+    fix: implement YAML section parse for cat/input/output/authority/execution/renderer
+
+  G-E3:
+    title: CatDispatcher STUB â€” never calls fem-cat
+    path: brain/coge/src/cat_dispatcher.rs
+    impact: CAT dispatch chain completely broken
+    fix: CatDispatcher::dispatch_sio(sio) -> AilParser::parse() -> ExecutorBridge
+
+  G-E4:
+    title: CapacityOrch not created
+    path: brain/capacity/ (create)
+    impact: Brain tier always nano (no routing) or hardcoded
+    fix: Rust no_std complexity_score + APA gate + BrainTier enum
+
+  G-E5:
+    title: SoulRegistry not created
+    path: soul/registry/ (create)
+    impact: Multi-soul profile hot-plug impossible
+    fix: SoulRegistry::activate/deactivate/bundle()
+
+  G-E6:
+    title: CatRenderer missing
+    path: fem/cat/src/renderer.rs (create)
+    impact: CAT cannot emit CLI/HTML/AVS/Chat/CRI surface output
+    fix: render(manifest, Surface) -> RenderedAction
+
+RETAINED_CRITICAL (from v1):
+  G-C1: HacedleBridge STUB (no real inference) â€” still CRITICAL
+  G-C2: GGUF Loader empty tensors â€” still CRITICAL (now P4 in era-5 priority)
+  G-C3: SKB not wired to soul/orch â€” still CRITICAL
+  G-C4: SIO not enforced as transport â€” still CRITICAL
+```
+
+---
+
+## ALPHA-3 PRIORITY REORDER (era-5)
+
+```yaml
+old_order:
+  P0: GGUF runtime truth
+  P1: LRO overlay runtime
+  P2: ZES enforcement
+  P3: KV fusion
+  P4: SKB hydration
+
+new_order:
+  P0: CAT parser complete + CatRegistry (CP1+CP2 from csa-cat-blueprint)
+  P1: Coge dispatcher real + CatRenderer (CP3+rendering)
+  P2: SKB hydration wire soul/orch -> fem/skb (CP3 from v1)
+  P3: CapacityOrch no_std (CP4 from csa-cat-blueprint)
+  P4: SoulRegistry hot-plug (CP5 from csa-cat-blueprint)
+  P5: GGUF runtime truth (retained G1, now P5)
+  P6: LRO overlay (FROZEN until P0-P4 complete)
+
+rationale: >
+  The CAT+Coge+SKB layer is the prerequisite routing surface.
+  GGUF inference at P5 is still required for the full stack,
+  but a working brain with stub inference + real CAT routing + real SKB hydration
+  is more architecturally correct than a real inference engine with no routing surface.
+  LoRA resumes naturally after P0-P4 deliver the context injection infrastructure.
+```
+
+---
+
+## IMPLEMENTATION SEQUENCE (era-5 CTO order)
+
+```yaml
+sprint_1_cat_core: # 3h
+  - fem/cat/src/parser.rs     : full YAML contract parse
+  - fem/cat/src/lib.rs        : InputSpec -> HashMap<String,FieldSpec>
+  - fem/cat/src/registry.rs   : CatRegistry::scan_dir + resolve
+  deliverable: AilParser + CatRegistry usable
+
+sprint_2_coge_real: # 4h
+  - brain/coge/src/cat_dispatcher.rs : real AilParser + CatRegistry dispatch
+  - brain/coge/src/mod.rs            : route via CatRegistry not raw match
+  - fem/cat/src/renderer.rs          : CatRenderer per surface
+  - brain/coge/src/renderer.rs       : Coge render bridge
+  deliverable: "hace brain model.verify" dispatches via real CAT manifest
+
+sprint_3_capacity: # 3h
+  - brain/capacity/src/lib.rs  : CapacityOrch (no_std, score + APA + tier)
+  - brain/coge/src/capacity.rs : wire into CogeBridge.execute()
+  deliverable: dynamic brain tier selection operational
+
+sprint_4_soul_registry: # 4h
+  - soul/registry/src/lib.rs   : SoulRegistry activate/deactivate/bundle
+  - soul/profiles/*.skb.ail    : initial SKB profile files
+  - brain/coge/src/hydrator.rs : SkbHydrator SIO_v1 -> SIO_v2
+  deliverable: multi-soul hot-plug + context hydration
+
+sprint_5_gguf_truth: # 6h (previously P0, now P5)
+  - fem/hacedle/x/loader/gguf/loader_std.rs : real tensor mmap parse
+  - fem/hacedle/src/lib.rs                  : BrainKernel trait impl
+  - brain/master/bridges/hacedle.rs         : real invoke() -> HacedleEngine
+  deliverable: first real inference token
+
+total_estimate: ~20h focused implementation
+era5_ready_after: sprint_4 (Cat+Coge+SKB+CapOrch all wired)
+full_alpha3_after: sprint_5 (GGUF truth + era-5 stack)
+```
+
+---
+```yaml
+footer:
+  version: v2
+  supersedes: csa-brain-blueprint-v1.ail (2026-06-04)
+  depends_on: [crd-brain-research-v2.ail, csa-cat-blueprint-v1.ail]
+  target: T:/hace/engine/hace/brain/canon/csa-brain-blueprint.ail
+```

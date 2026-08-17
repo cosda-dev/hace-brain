@@ -1,0 +1,121 @@
+# CSA CLI Audit Report - Brain CLI
+
+```yaml
+header:
+  id: CSA_CLI_AUDIT_20260604
+  intent: AUDIT
+  status: DRAFT
+  scope: cli_ecosystem
+```
+
+## RR CLI DNA Analysis
+
+```yaml
+rr_cli:
+  traits:
+    - CommandModule: trait with namespace() and handle()
+  structs:
+    - CliCommand: { family: CommandFamily, action: str, raw: str }
+    - ParsedCommandHead: { style: CommandStyle, head: str, tail: str, left: Option<str>, right: Option<str> }
+    - CommandFamily: enum { Intent, Rfn, Cap, Ape, Rc, Evidence, Helio }
+    - CommandStyle: enum { Artisan, Git, Domain, Unknown }
+  functions:
+    - parse_family: str -> Option<CommandFamily>
+    - is_known_family: str -> bool
+    - is_known_command: (family: str, action: str) -> bool
+    - parse_command_head: str -> ParsedCommandHead
+    - detect_style: (head: str, tail: str) -> CommandStyle
+    - split_on: (raw: str, sep: char) -> Option<(str, str)>
+  pattern:
+    - no_std compliant
+    - no runtime dependencies
+    - pure parsing logic
+```
+
+## Hace CLI Analysis
+
+```yaml
+hace_cli:
+  extends: rr_cli
+  adds:
+    - CommandModule Implementation
+    - ModuleRegistry pattern
+    - IR (Intermediate Representation) flow
+  structure:
+    - cmd::amo: AmoModule
+    - cmd::brain: BrainModule
+    - cmd::comet: CometModule
+    - cmd::force: ForceModule
+    - cmd::serve: ServeModule
+    - cmd::hot: HotModule
+    - cmd::audit: AuditModule
+  dispatcher:
+    - Registry: HashMap<String, Box<dyn CommandModule>>
+    - gate_via_me: CLIE validation hook
+    - build_raw_command: IR -> String
+```
+
+## Hace ME CLIE Analysis
+
+```yaml
+hace_me_clie:
+  traits:
+    - Clie: Parser interface
+  structs:
+    - ParseInput: { raw_command: str, actor_id: str, authority_level: AuthorityLevel, ... }
+    - ParseOutput: { parsed_command: str, validation: ValidationResult, ... }
+  flow:
+    - CLI input -> ParseInput -> Clie.parse() -> ParseOutput
+    - validation_result determines if command proceeds
+```
+
+## Brain CLI Gap Analysis
+
+```yaml
+brain_cli_gap:
+  implemented:
+    - lib.rs: core module structure
+    - command.rs: BrainAction enum
+    - router.rs: BrainRouter
+    - executor.rs: BrainExecutor, ModelExecutor, LoraExecutor, ReplayExecutor
+    - model.rs, lora.rs, replay.rs, inspect.rs, profile.rs, benchmark.rs
+  missing:
+    - Integration with Hace CLI dispatcher
+    - Wire to BrainRuntime
+    - Real model loading integration
+    - KV cache inspection
+    - Golden tensor replay
+```
+
+## Brain CLI Canon Plan
+
+```text
+engine/
+└── hace/
+    └── brain/
+        └── cli/
+            ├── mod.rs (planned)
+            ├── command.rs
+            ├── router.rs
+            ├── executor.rs
+            ├── model.rs
+            ├── lora.rs
+            ├── kv.rs (planned)
+            ├── replay.rs
+            ├── inspect.rs
+            ├── profile.rs
+            ├── benchmark.rs
+            └── help.rs (planned)
+```
+
+## Integration Points
+
+```yaml
+integration:
+  desde_hace_cli:
+    dispatcher.rs -> maps brain subcommand -> BrainModule
+  hacia_brain_runtime:
+    BrainModule -> BrainExecutor -> BrainRuntime -> BrainKernel -> Hacedle
+  con_clie:
+    CommandModule -> gate_via_me validates -> dispatch
+```

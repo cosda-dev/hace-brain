@@ -1,0 +1,231 @@
+---
+header:
+  id: AIL://brain.audit.features.alpha3.v1
+  intent: FEATURE_CHECKLIST
+  status: ACTIVE
+  version: "1.0.0"
+  authority: CSA
+  updated: "2026-06-05"
+---
+
+# Alpha-3 Feature Checklist
+
+## How to use
+
+```yaml
+run_before_merge: true
+gate: "ALL P0 items must PASS before Alpha-3 tag"
+verify_cmd: "python3 audit/scripts/inference_chain.py"
+```
+
+---
+
+## F-01 | GGUF Verify (G1)
+
+```yaml
+id:      F-01
+feature: "hace brain model verify <path.gguf>"
+status:  PARTIAL
+
+checks:
+  - id: F-01-A
+    desc: "reads actual GGUF magic (4 bytes = 0x47475546)"
+    verify: "python3 audit/scripts/gguf_verify.py model.gguf"
+    pass_when: "output shows gguf_version not hardcoded"
+    priority: P0
+
+  - id: F-01-B
+    desc: "tensor_count from file, not hardcoded 291"
+    verify: "python3 audit/scripts/gguf_verify.py --stub-check"
+    pass_when: "verdict != HARDCODED_STUB"
+    priority: P0
+
+  - id: F-01-C
+    desc: "returns error on non-GGUF file, no panic"
+    verify: "echo 'bad' > /tmp/bad.bin && hace brain model verify /tmp/bad.bin"
+    pass_when: "error message printed, exit code != 0"
+    priority: P0
+```
+
+---
+
+## F-02 | GGUF Inspect (G2)
+
+```yaml
+id:      F-02
+feature: "hace brain model inspect <path.gguf>"
+status:  NOT_STARTED
+
+checks:
+  - id: F-02-A
+    desc: "architecture from GGUF KV 'general.architecture'"
+    pass_when: "output 'architecture: qwen2' for Qwen model"
+    priority: P0
+
+  - id: F-02-B
+    desc: "context_length, embedding_length, block_count, head_count printed"
+    pass_when: "all 4 fields non-null in output"
+    priority: P0
+
+  - id: F-02-C
+    desc: "tokenizer model type from 'tokenizer.ggml.model'"
+    pass_when: "output 'tokenizer_model: gpt2' for Qwen"
+    priority: P1
+```
+
+---
+
+## F-03 | Tokenizer (G5) â€” CRITICAL BLOCKER
+
+```yaml
+id:      F-03
+feature: "hace brain tokenize <text>"
+status:  BLOCKED
+
+checks:
+  - id: F-03-A
+    desc: "Cargo.toml contains 'tokenizers' dep"
+    verify: "grep 'tokenizers' brain/master/Cargo.toml"
+    pass_when: "tokenizers = { version = '0.19' } present"
+    priority: P0
+    note: "3.37KB custom tokenizer = FAIL â€” ASCII bytes != BPE token IDs"
+
+  - id: F-03-B
+    desc: "encode('hello') returns [9707] for Qwen2.5"
+    verify: "python3 -c from fixtures: audit/fixtures/hello_tokens.json"
+    pass_when: "token IDs match fixture file"
+    priority: P0
+
+  - id: F-03-C
+    desc: "decode([9707]) returns 'hello'"
+    pass_when: "round-trip encode->decode is lossless"
+    priority: P0
+
+  - id: F-03-D
+    desc: "empty string encode returns []"
+    pass_when: "no panic, Ok(vec![])"
+    priority: P1
+
+  - id: F-03-E
+    desc: "tokenizer loaded from GGUF metadata, no sidecar .json required"
+    pass_when: "hace brain tokenize works with only .gguf file"
+    priority: P1
+```
+
+---
+
+## F-04 | KV Cache (G6)
+
+```yaml
+id:      F-04
+feature: "KvCache::new() + prefill()"
+status:  SKELETON
+
+checks:
+  - id: F-04-A
+    desc: "alloc [n_layers][max_seq][kv_heads][head_dim] f32 without OOM"
+    verify: "python3 audit/scripts/kv_cache_validation.py"
+    pass_when: "kv_cache.rs status=OK"
+    priority: P0
+
+  - id: F-04-B
+    desc: "seq_len > max_seq_len returns Err, not panic"
+    pass_when: "error propagated to caller cleanly"
+    priority: P0
+
+  - id: F-04-C
+    desc: "hace brain prefill <path.sio> prints 'cache_entries: N'"
+    pass_when: "N equals prompt token count"
+    priority: P1
+```
+
+---
+
+## F-05 | Inference + Logits (G7)
+
+```yaml
+id:      F-05
+feature: "hace brain logits <text>"
+status:  NOT_STARTED
+
+checks:
+  - id: F-05-A
+    desc: "InferenceEngine::infer() calls tokenizer + kv_cache + hacedle kernel"
+    verify: "python3 audit/scripts/inference_chain.py"
+    pass_when: "InferenceEngine status=OK"
+    priority: P0
+
+  - id: F-05-B
+    desc: "logits output is Vec<f32>[vocab_size], no NaN"
+    pass_when: "no nan in output, len = vocab_size of model"
+    priority: P0
+
+  - id: F-05-C
+    desc: "top-5 tokens printed with scores"
+    pass_when: "format: 'token: world  score: 12.8'"
+    priority: P1
+```
+
+---
+
+## F-06 | First Token (G8)
+
+```yaml
+id:      F-06
+feature: "hace brain prompt 'hello'"
+status:  NOT_STARTED
+
+checks:
+  - id: F-06-A
+    desc: "output is decoded text, not ASCII bytes or 'stub'"
+    pass_when: "output contains at least 1 real token after 'hello'"
+    priority: P0
+
+  - id: F-06-B
+    desc: "model: field shows actual loaded GGUF name"
+    pass_when: "NOT empty, NOT hardcoded"
+    priority: P0
+
+  - id: F-06-C
+    desc: "latency_ms reported"
+    pass_when: "latency_ms > 0"
+    priority: P1
+```
+
+---
+
+## F-07 | Crate Structure Health
+
+```yaml
+id:      F-07
+feature: "All crates compile: cargo check --workspace"
+status:  BROKEN
+
+checks:
+  - id: F-07-A
+    desc: "coge/src/lib.rs exists (not orphan mod.rs in root)"
+    verify: "test -f brain/coge/src/lib.rs"
+    pass_when: "exists and non-empty"
+    priority: P0
+
+  - id: F-07-B
+    desc: "brain/src/ deleted or has Cargo.toml"
+    verify: "test ! -d brain/src OR test -f brain/src/Cargo.toml"
+    pass_when: "one of the conditions true"
+    priority: P0
+
+  - id: F-07-C
+    desc: "brain/io/ has Cargo.toml or files merged into hace-io"
+    priority: P1
+```
+
+---
+
+## Pass gate summary
+
+```yaml
+alpha3_pass_gate:
+  P0_required: [F-01-A, F-01-B, F-01-C, F-03-A, F-03-B, F-03-C, F-04-A, F-04-B, F-05-A, F-05-B, F-06-A, F-07-A, F-07-B]
+  P1_nice:     [F-02-C, F-03-D, F-03-E, F-04-C, F-05-C, F-06-B, F-06-C, F-07-C]
+  verdict:     "ALL P0 must PASS. P1 failures block only Alpha-4."
+```

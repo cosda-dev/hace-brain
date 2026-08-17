@@ -1,0 +1,75 @@
+---
+header:
+  id: RC://audit.authority.separation.v1
+  intent: DECLARE_AUDIT_BOUNDARY
+  status: CANONICAL
+  authority: CSA
+  locale: en-core
+  version: "1.0.0"
+---
+
+# Authority Separation Rules
+
+```yaml
+authority_separation:
+
+  builders_cannot_certify: true
+
+role_separation:
+
+  builder_chain:
+    - role: CTO
+      responsibility: implementation
+    - role: Coder
+      responsibility: code
+
+  verification_chain:
+    - role: CSA
+      responsibility: audit
+    - role: Reviewer
+      responsibility: review
+    - role: Inspector
+      responsibility: inspect
+
+  certification_chain:
+    - role: Certifier
+      responsibility: certify
+    - role: CEO
+      responsibility: seal
+
+folder_ownership:
+
+  brain/canon/*:
+    owner: CRD
+
+  brain/audit/*:
+    owner: CSA
+
+  brain/master/src/*:
+    owner: CTO
+
+  fem/hacedle/*:
+    owner: hacedle
+
+rules:
+
+  - id: AUDIT_01
+    name: BUILDER_CANNOT_CERTIFY_OWN_ARTIFACT
+    reference: ARA_001
+
+  - id: AUDIT_02
+    name: TESTS_ARE_OWNED_BY_CSA
+    reference: ARA_002
+
+  - id: AUDIT_03
+    name: STUB_CANNOT_PASS_CERTIFICATION
+    reference: ARA_003
+
+audit_flow:
+
+  1. CTO creates implementation
+  2. CSA runs independent validation
+  3. Reviewer reviews
+  4. Certifier certifies
+  5. CEO seals
+```

@@ -1,0 +1,13 @@
+[package]
+name    = "hace-brain-hooks"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Brain hook-point registry — E4: pass-through, E5: ACM/evidence wiring"
+
+[features]
+default = []
+std     = []
+# E5 feature flags — flip to activate governance hooks
+e5_acm_check  = []
+e5_evidence   = []

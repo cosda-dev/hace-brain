@@ -1,0 +1,167 @@
+---
+header:
+  id: AIL://brain.canon.index.v2
+  intent: CANON_INDEX
+  status: ACTIVE
+  version: "2.0.0"
+  authority: CSA
+  updated: "2026-06-05"
+  locale: vi-85
+---
+
+# Brain Canon Index
+
+## Scope
+
+```yaml
+canon_root: "engine/hace/brain/canon/"
+purpose: "Ground truth cho Brain Runtime (Zeus CE layer)"
+enforced_by: CSA
+applies_to:
+  - CTO/T3C implementation
+  - Cogen code generation
+  - AIA audit agents
+```
+
+---
+
+## Module Canon
+
+```yaml
+brain.ail:
+  topic: "Brain Runtime architecture, CE roles, dispatch rules"
+  status: ACTIVE
+  version: "2.0.0"
+
+coge.ail:
+  topic: "Coge (Context Orchestrator + Gateway Engine) spec"
+  status: ACTIVE
+  note: "coge/ crate has structural issue â€” see audits/struct-rules.ail"
+
+providers.ail:
+  topic: "BrainProvider hierarchy: Mock -> Candle -> Llama -> Remote"
+  status: ACTIVE
+
+routing.ail:
+  topic: "ZeusRouter complexity-based CE dispatch"
+  status: ACTIVE
+
+crd-brain-research.ail:
+  topic: "CRD G1-G8 Alpha-3 directives (source of truth)"
+  status: ACTIVE
+  authority: CRD
+
+csa-brain-blueprint.ail:
+  topic: "CSA architectural blueprint for brain/master"
+  status: ACTIVE
+
+csa-cli-specs.ail:
+  topic: "CLI command specs: brain {prompt,model,replay,tokenize}"
+  status: ACTIVE
+```
+
+---
+
+## ASI (Assemble SI) â€” module contracts
+
+```yaml
+asi/gguf-loader.ail:
+  topic: "GgufLoader ASI: load() input/output/error contract"
+  file_owner: "brain/master/src/provider/gguf/loader.rs"
+  hacedle_delegate: "fem/hacedle/src/x/loader/gguf/loader_std.rs"
+
+asi/candle-runtime.ail:
+  topic: "CandleRuntime ASI: inference forward pass contract"
+  file_owner: "brain/master/src/kernel/hacedle.rs"
+  hacedle_delegate: "fem/hacedle/src/x/provider/candle/{inference,layer,lmhead}.rs"
+
+asi/tokenizer.ail:
+  topic: "BrainTokenizer ASI: encode/decode contract, GGUF BPE source"
+  file_owner: "brain/master/src/tokenizer/"
+  status: ACTIVE
+
+asi/kv-cache.ail:
+  topic: "KvCache ASI: prefill/get/set memory layout contract"
+  file_owner: "brain/master/src/runtime/kv_cache.rs"
+
+asi/runtime.ail:
+  topic: "Runtime ASI: prefill + sampler contracts"
+  file_owner: "brain/master/src/runtime/{prefill,logits}.rs"
+  status: ACTIVE
+```
+
+---
+
+## FAN (Feature Artifact Node) table
+
+```yaml
+fan/gguf-verify.ail:    "EFC: gguf_magic_check + metadata_parse"
+fan/inference-runtime.ail: "EFC: forward_pass + kv_update"
+fan/kv-cache.ail:       "EFC: kv_alloc + prefill_fill + token_append"
+fan/tokenizer.ail:      "EFC: bpe_encode + bpe_decode"
+fan/runtime.ail:        "EFC: greedy_sample + topk_sample"
+fan/fan-table.ail:      "Master FAN table â€” all EFCs mapped to crate paths"
+```
+
+---
+
+## Hookpoints registry
+
+```yaml
+hookpoints/gguf-loader.ail:  "hok://brain/gguf/{before_load, after_load, on_error}"
+hookpoints/inference.ail:    "hok://brain/infer/{before_forward, after_forward, on_oom}"
+hookpoints/kv-cache.ail:     "hok://brain/kv/{before_prefill, after_prefill, on_evict}"
+hookpoints/sampler.ail:      "hok://brain/sample/{before_sample, after_sample}"
+hookpoints/tokenizer.ail:    "hok://brain/tok/{before_encode, after_encode}"
+```
+
+---
+
+## Audit rules
+
+```yaml
+audits/duplication-rules.ail:
+  topic: "Rules against reimplementing what hacedle already provides"
+  key_rule: "brain/master MUST NOT reimplement GGUF parsing â€” delegate to hacedle"
+
+audits/reuse-rules.ail:
+  topic: "Mandatory reuse targets in fem/hacedle"
+  key_assets: [loader_std.rs, tensor_index.rs, candle/inference.rs, candle/lmhead.rs]
+
+audits/authority-boundary.ail:
+  topic: "Brain (stateless compute) vs Soul (stateful OS) boundary enforcement"
+
+audits/authority-separation.ail:
+  topic: "CE authority: hacedle owns inference ops, brain/master owns orchestration"
+
+audits/struct-rules.ail:
+  topic: "Rust crate structure rules â€” no orphan files outside src/"
+```
+
+---
+
+## Authority
+
+```yaml
+authority/ownership.ail:
+  topic: "Who owns what: CSA=arch, CTO=impl, Cogen=codegen, hacedle=CE ops"
+
+authority/delegation.ail:
+  topic: "Delegation chain: BrainMasterRuntime -> InferenceEngine -> HacedleKernel -> CE"
+```
+
+---
+
+## Alpha-3 completion map
+
+```yaml
+alpha3_exit_criteria:
+  G1_gguf_verify:    "brain/master/src/provider/gguf/loader.rs delegates to hacedle"
+  G2_gguf_inspect:   "GGUF metadata KV fully parsed (architecture, context_length, ...)"
+  G3_tensor_list:    "TensorIndex from hacedle, CLI 'brain model tensors' works"
+  G4_mmap:           "Lazy tensor access via hacedle mmap.rs"
+  G5_tokenizer:      "tokenizers crate + GgufTokenizer::from_gguf(), encode/decode correct"
+  G6_kv_cache:       "KvCache::prefill() allocates [n_layers][seq][kv_heads][head_dim]"
+  G7_logits:         "LmHead forward -> logits[vocab], top-5 printed"
+  G8_first_token:    "greedy argmax -> token_id -> decode -> print"
+```

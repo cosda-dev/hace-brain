@@ -1,0 +1,47 @@
+# Brain Changelog
+
+## 2026-06-04 - Alpha-3 FES Runtime Chain
+
+### Added
+- brain/cli/ - Brain CLI canonical structure ✅
+  - command.rs, router.rs, executor.rs
+  - model.rs, lora.rs, replay.rs, inspect.rs, profile.rs, benchmark.rs
+- brain/io/ - Brain I/O bridge layer ✅
+  - rac.rs, raci.rs, racin.rs, racex.rs
+  - route.rs, sio.rs
+- brain/coge/ - Coge (Edge Execution) module ✅
+  - run.rs, infer.rs, lora.rs
+- brain/master/src/
+  - kernel/ (BrainKernel trait) ✅
+  - inference/ (InferenceEngine trait) ✅
+  - provider/mock.rs (MockProvider for testing) ✅
+- brain/canon/ - FES architecture spec ✅
+  - brain.ail, providers.ail, routing.ail
+- brain/milestones/ - CRD directives ✅
+  - alpha-3-real-inference-roadmap.ail
+
+### Changed
+- cli/src/bin/hace.rs - Added brain subcommand
+- master/src/lib.rs - Added kernel + inference modules
+- master/src/dispatcher.rs - Dynamic dispatch (Box<dyn BrainProvider>)
+- master/src/provider/mod.rs - Added ProviderCapability + MockProvider
+
+### Structure
+```text
+brain/
+├── cli/        (AS - 80%)
+├── io/         (IO - 100%)
+├── coge/       (Coge - 100%)
+├── master/
+│   ├── kernel/ (TI - 50%)
+│   ├── provider/ (PI - 60%)
+│   └── inference/ (Engine - 50%)
+├── canon/      (Spec - 100%)
+└── milestones/ (CRD - 100%)
+```
+
+### Status
+- Architecture: 95% ✅
+- Runtime Chain: 70% ⏳
+- Mock Provider: Ready for E2E test
+- Next: Wire MockProvider to validate full chain

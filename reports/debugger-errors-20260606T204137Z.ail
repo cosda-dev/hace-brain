@@ -1,0 +1,259 @@
+---
+header:
+  id: AIL://brain.reports.debugger.errors.20260606T204137Z
+  intent: DEBUGGER_ERRORS_DETECTION
+  status: ACTIVE
+  authority: DEBUGGER
+  locale: en
+  version: "1.0.0"
+  datetime: "2026-06-06T20:41:37+07:00"
+  scope:
+    - fem/hacedle/src/x/provider/candle/inference.rs
+    - fem/hacedle/src/x/provider/candle/embed.rs
+    - fem/hacedle/src/x/provider/candle/lmhead.rs
+    - fem/hacedle/src/x/provider/candle/tokenizer.rs
+    - fem/hacedle/src/x/provider/candle/layer.rs
+    - brain/master/src/inference/engine.rs
+    - brain/master/src/provider/candle.rs
+---
+
+# 🐛 Debugger Error Report - CSA Alpha-3 Implementation Audit
+
+## Executive Summary
+
+| Layer | Component | Status | Critical Issue |
+|-------|-----------|--------|----------------|
+| P0 | GGUF Tensor Validation | ✅ WORKING | TensorIndex parsing 290 tensors |
+| P1 | Embedding Reality Check | ⚠️ STUB | Weights not loaded from GGUF |
+| P2 | LMHead Reality Check | ⚠️ STUB | Empty weight vector |
+| P3 | Transformer Layer | ⚠️ STUB | Forward pass returns identity |
+| P4 | First Real Token | ❌ FAIL | All prompts produce identical output |
+| Model Identity | Cross-Model Test | ❌ FAIL | All models produce same tokens |
+
+---
+
+## ERROR-001: Empty Embedding Weights [CRITICAL]
+
+**Location:** `fem/hacedle/src/x/provider/candle/embed.rs:17-18`
+
+**Error:**
+```rust
+pub fn new() -> Self {
+    Self {
+        embedding_dim: 0,
+        vocab_size: 0,
+        embeddings: Vec::new(),  // EMPTY - no weights loaded
+    }
+}
+```
+
+**Impact:** `embed_token()` returns zero vectors when embeddings is empty.
+
+**Evidence:**
+- `inference_probe.rs` line 48: `let embeddings = engine.embed.embed_sequence(&tokens);`
+- No call to `load_quantized()` or `load_from_gguf()` in default engine creation
+- `load_model()` in inference.rs attempts to load weights but dequant fails silently
+
+**Fix Required:**
+1. Call `load_quantized()` with tensor data from GGUF file
+2. Wire tensor bytes from `loader.tensor_bytes("token_embd.weight")` to dequant
+
+---
+
+## ERROR-002: Empty LMHead Weights [CRITICAL]
+
+**Location:** `fem/hacedle/src/x/provider/candle/lmhead.rs:13-14`
+
+**Error:**
+```rust
+pub fn new(vocab_size: usize, embed_dim: usize) -> Self {
+    Self { weight: Vec::new(), vocab_size, embed_dim }  // EMPTY WEIGHTS
+}
+```
+
+**Impact:** `forward()` produces all zeros:
+```rust
+pub fn forward(&self, hidden: &[f32]) -> Vec<f32> {
+    let mut logits = vec![0.0f32; self.vocab_size];  // All zeros
+    // Matrix mult with empty weight = zeros
+}
+```
+
+**Fix Required:**
+1. Load `output.weight` tensor from GGUF
+2. Dequantize Q4_K_M to f32
+3. Store in `self.weight` field
+
+---
+
+## ERROR-003: Transformer Layer Stub [CRITICAL]
+
+**Location:** `fem/hacedle/src/x/provider/candle/layer.rs:17-22`
+
+**Error:**
+```rust
+pub fn forward(&self, hidden_states: &[f32], _attention_weights: &[f32], _ffn_weights: &[f32]) -> Vec<f32> {
+    // Placeholder: apply attention then FFN
+    hidden_states.to_vec()  // IDENTITY - no actual computation
+}
+```
+
+**Impact:** 
+- Attention returns input unchanged
+- FFN returns input unchanged
+- RMSNorm returns input unchanged
+- No RoPE applied to positions
+
+**Fix Required:**
+1. Implement real RMSNorm with weight
+2. Implement QKV attention with causal mask
+3. Implement FFN with gate/up/down projections
+4. Load all transformer weights from GGUF
+
+---
+
+## ERROR-004: Missing Model Identity Differentiation [CRITICAL]
+
+**Test Case:** `hello world, what is your model name?`
+
+**Expected Behavior:**
+- Qwen2.5-0.5B: tokens differ from Phi-3-mini and Llama
+- Phi-3-mini: different tokens
+- Llama-3.2: different tokens
+
+**Actual Behavior:**
+- All models return identical token sequence
+- Indicates stub/fake logits
+
+**Root Cause Analysis:**
+1. Weights are empty (ERROR-001, ERROR-002)
+2. Transformer is stub (ERROR-003)
+3. `load_model()` in inference.rs lines 42-72 is not called in default engine
+4. `InferenceEngine::default()` creates empty infrastructure
+
+**Fix Required:**
+1. Ensure `load_model()` is called before inference
+2. Implement real weight loading from GGUF
+3. Implement real forward pass with loaded weights
+
+---
+
+## ERROR-005: Tokenizer Fallback to ASCII [HIGH]
+
+**Location:** `fem/hacedle/src/x/provider/candle/tokenizer.rs:73-89`
+
+**Error:**
+```rust
+pub fn encode_bpe(&self, text: &str) -> Vec<u32> {
+    if !self.vocab.is_empty() {
+        self.encode_with_vocab(text)  // Good path
+    } else {
+        text.bytes().map(|b| b as u32).collect()  // ASCII fallback - WRONG!
+    }
+}
+```
+
+**Impact:**
+- "hello" → `[104, 101, 108, 108, 111]` (ASCII bytes)
+- Should be → `[9707]` for Qwen BPE
+
+**Fix Required:**
+1. Load vocabulary from GGUF `tok_*` metadata
+2. Load merges from GGUF metadata
+3. Use proper BPE algorithm
+
+---
+
+## ERROR-006: SioOutcome Type Verified [FIXED]
+
+**Location:** `brain/master/src/outcome.rs:6-15`
+
+**Status:** ✅ Already fixed
+
+The type is correctly defined as enum with `Success` and `Error` variants.
+
+---
+
+## Current Pipeline Status
+
+```text
+Prompt
+  ↓
+[ASCII bytes] Tokenizer (NOT GGUF vocab)
+  ↓
+[Zero vectors] EmbedEngine (NOT loaded)
+  ↓
+[Identity forward] Transformer24 (STUB)
+  ↓
+[Zero logits] LMHead (NOT loaded)
+  ↓
+[All same] Sampler
+  ↓
+First Token: Wrong for all models
+```
+
+---
+
+## Verification Commands
+
+```yaml
+# Check for stub weights
+command: "grep -rn 'Vec::new()' T:/hace/engine/hace/fem/hacedle/src/x/provider/candle/"
+expected: No results in embed.rs, lmhead.rs
+
+# Check for stub forward
+command: "grep -n 'hidden_states.to_vec()' T:/hace/engine/hace/fem/hacedle/src/x/provider/candle/layer.rs"
+expected: No stub identity forward
+
+# Check for proper tokenizer encoding
+command: "grep -n 'encode_with_vocab' T:/hace/engine/hace/fem/hacedle/src/x/provider/candle/tokenizer.rs"
+expected: Called when vocab is loaded
+```
+
+---
+
+## Priority Fix Order
+
+| Priority | Component | Blocker for |
+|----------|-----------|-------------|
+| P0 | Implement `load_model()` call in InferenceEngine | All inference |
+| P1 | Wire GGUF tensor bytes to `EmbedEngine::load_quantized()` | Embedding |
+| P2 | Wire GGUF tensor bytes to `LMHead::load_weight()` | Logits |
+| P3 | Implement real forward pass in TransformerLayer | Forward |
+| P4 | Load tokenizer vocab from GGUF | Tokenization |
+| P5 | Implement real attention + FFN | Model identity |
+
+---
+
+## Acceptance Criteria
+
+After fixes, the following should pass:
+
+```yaml
+gate_01:
+  gguf_weights_loaded: true
+  test: tensor_probe shows non-zero embedding values
+
+gate_02:
+  tokenizer_roundtrip: true
+  test: "hello" encodes to [9707], decodes back to "hello"
+
+gate_03:
+  embedding_non_zero: true
+  test: embed_token(9707) returns non-zero vector
+
+gate_04:
+  logits_non_zero: true
+  test: infer_logits("hello") returns varied logits
+
+gate_05:
+  model_identity_different: true
+  test: Qwen/Phi/Llama produce different first tokens
+
+gate_06:
+  prompt_to_reply_working: true
+  test: "hello world" → actual generated tokens
+```
+
+Report by DEBUGGER - Error Detection Complete
+2026-06-06T20:41:37+07:00

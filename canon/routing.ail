@@ -1,0 +1,138 @@
+---
+header:
+  id: AIL://brain.canon.routing.v2
+  intent: DECLARE_CANON
+  status: ACTIVE
+  version: "2.0.0"
+  authority: CSA
+  updated: "2026-06-06"
+  prev_version: "1.0.0 (2026-06-04) â€” stale, BrainRouter dual-routing not documented"
+---
+
+# Brain Routing â€” Canonical Dispatch
+
+## Single canonical router
+
+```yaml
+canonical_router:
+  name:   ZeusRouter
+  path:   "brain/runtime/src/lib.rs"
+  status: WORKS (tests pass)
+  
+deleted_router:
+  name:   BrainRouter
+  path:   "brain/runtime/src/router.rs"
+  status: DELETED (per CSA GAP-07 directive)
+  was:    "string-switch on sio.runtime.provider â€” redundant, incorrect layer"
+```
+
+---
+
+## ZeusRouter â€” dispatch logic
+
+```yaml
+entry_point: "ZeusRuntime::execute(ctx: ReasonCtx) -> Result<ReasonResult, BrainError>"
+
+step_1_classify:
+  fn:    "classify_complexity(action: &str, payload_size: usize) -> Complexity"
+  path:  "brain/base/src/lib.rs"
+  rules:
+    Simple:  "payload_size < 256 AND action in [compute, route, validate, ping]"
+    Medium:  "payload_size 256-2048"
+    Complex: "payload_size > 2048"
+
+step_2_select_ce:
+  fn:    "ZeusRouter::select_ce(complexity) -> CeId"
+  modes:
+    AlgoOnly:  "all -> CeId::Algo"
+    LocalLlm:  "Simple->Algo, Medium+Complex->Local"
+    RemoteLlm: "Simple->Algo, Medium+Complex->Remote"
+    Hybrid:    "Simple->Algo, Medium->Local, Complex->(Local if prefer_local else Remote)"
+
+step_3_dispatch:
+  CeId::Algo:   "AlgoParticle::reason(ctx)"
+  CeId::Local:  "self.local_ce.as_ref()?.reason(ctx)  â€” None = graceful fallback to Algo"
+  CeId::Remote: "self.remote_ce.as_ref()?.reason(ctx) â€” None = fallback chain Local->Algo"
+
+hooks_called:
+  before_route:    "hok://brain/before_route   (E4: pass-through)"
+  after_route:     "hok://brain/after_route    (E4: pass-through)"
+  before_execute:  "hok://brain/before_execute (E4: pass-through)"
+  after_execute:   "hok://brain/after_execute  (E4: pass-through; E5: evidence pack)"
+```
+
+---
+
+## ZeusConfig
+
+```yaml
+struct_ZeusConfig:
+  mode:          "BrainMode â€” default Hybrid"
+  max_local_ctx: "usize â€” default 4096 tokens; above this force Remote"
+  prefer_local:  "bool  â€” default true; false for cloud-primary deployments"
+
+e4_default: |
+  ZeusConfig {
+    mode:          BrainMode::Hybrid,
+    max_local_ctx: 4096,
+    prefer_local:  true,
+  }
+```
+
+---
+
+## CE injection pattern
+
+```yaml
+injection: |
+  // E4 with CE.Algo only (default)
+  let rt = ZeusRuntime::new(ZeusConfig::default());
+  
+  // After CE.Hacedle implemented (GAP-T5 resolved):
+  let mut rt = ZeusRuntime::new(ZeusConfig::default());
+  rt.router.register_local(Box::new(HacedleBrain::load("qwen.gguf")?));
+  
+  // E4.5 cloud:
+  rt.router.register_remote(Box::new(RemoteBrain::new(racex_cfg)));
+
+fallback_guarantee: |
+  ZeusRouter never panics on missing CE.
+  local_ce = None -> graceful fallback to AlgoParticle.
+  remote_ce = None -> fallback to local, then Algo.
+```
+
+---
+
+## BrainMode â€” SIO-level override
+
+```yaml
+mode_source: |
+  BrainMode can be overridden per-request via RuntimeSio.runtime.mode field.
+  Default comes from ZeusConfig::mode.
+
+override_path: |
+  RuntimeSio.runtime.mode -> InferRequest.mode_hint
+    -> ZeusRuntime::execute_with_mode(ctx, mode_hint)
+  
+  Not yet implemented in InferenceEngine (GAP-T1).
+  Wiring deferred until engine.rs receives InferRequest.
+```
+
+---
+
+## Routing violations (active)
+
+```yaml
+ROUTE-V01:
+  file:    "brain/master/src/lib.rs"
+  finding: "BrainMasterRuntime::execute() does not call ZeusRuntime"
+  impact:  "ZeusRouter unreachable from master layer"
+  fix:     "extract InferRequest from SIO, pass to ZeusRuntime::execute()"
+  gap_ref: "GAP-T1"
+
+ROUTE-V02:
+  file:    "brain/runtime/src/dispatcher.rs"
+  finding: "RuntimeDispatcher::dispatch() = let _ = session; Ok(default())"
+  impact:  "Dead code â€” dispatcher layer not needed if engine.rs calls ZeusRuntime"
+  fix:     "Delete RuntimeDispatcher, call ZeusRuntime directly from engine.rs"
+```

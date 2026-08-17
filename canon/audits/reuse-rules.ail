@@ -1,0 +1,78 @@
+---
+header:
+  id: AUDIT://brain.reuse-rules.v1
+  intent: DECLARE_AUDIT_RULES
+  status: CANONICAL
+  authority: CSA
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# Reuse Rules (Audit)
+
+```yaml
+rules:
+
+  - id: RULE_01
+    name: FAN_BEFORE_CODE
+    description: >
+      Before creating any artifact, check FAN Registry.
+      Feature must have FAN identity before implementation.
+    enforcement: PRE_COMMIT
+
+  - id: RULE_02
+    name: ASI_BEFORE_IMPLEMENTATION
+    description: >
+      ASI must declare integration path before code.
+      Assembly System Integration is mandatory.
+    enforcement: PRE_COMMIT
+
+  - id: RULE_03
+    name: HOOKPOINT_BEFORE_EXTENSION
+    description: >
+      Hookpoint must be defined before extending.
+      Authority boundary must be declared.
+    enforcement: PRE_COMMIT
+
+  - id: RULE_04
+    name: REUSE_BEFORE_REIMPLEMENT
+    description: >
+      MUST reuse existing implementation before reimplement.
+      Check hacedle, fem, and FAN Registry first.
+    enforcement: CSA_AUDIT_PASS
+    violation:
+      severity: FAIL
+      action: DELETE_AND_REEXPORT
+
+  - id: RULE_05
+    name: AUTHORITY_BEFORE_CAPABILITY
+    description: >
+      Authority must be established before capability use.
+      Check ownership rules.
+    enforcement: BUILD_TIME
+
+  - id: RULE_06
+    name: CERTIFICATION_REQUIRES_INDEPENDENT_EXECUTION
+    description: >
+      Artifact MUST be tested by CSA-owned scripts,
+      not by builder's own test harness.
+    enforcement: POST_BUILD
+    violation:
+      severity: FAIL
+      action: REJECT_CERTIFICATION
+
+reuse_checklist:
+
+  before_creating:
+    - Check FAN Registry for existing feature
+    - Check hacedle for existing implementation
+    - Check ASI for integration path
+    - Check Hookpoint for authority boundary
+
+  audit_targets:
+    - brain/master/provider/gguf/*
+    - brain/master/src/tokenizer/*
+    - brain/master/src/runtime/*
+    - brain/master/src/inference/*
+```

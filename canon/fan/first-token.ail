@@ -1,0 +1,68 @@
+---
+header:
+  id: FAN://brain.first-token.v1
+  intent: DECLARE_FEATURE_IDENTITY
+  status: CANONICAL
+  authority: CRD
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# FAN: First Token
+
+```yaml
+fan:
+  id: FAN://brain.first-token
+  name: Brain First Token Generation
+  version: v1
+
+owner:
+  brain/master
+
+steward:
+  hacedle
+
+efr: BRAIN_FIRST_TOKEN
+
+capability:
+  - tokenize
+  - infer
+  - sample
+
+dependencies:
+  - FAN://brain.gguf.verify
+  - FAN://brain.tokenizer
+  - FAN://brain.kv-cache
+  - FAN://brain.inference-engine
+
+required_artifacts:
+  - hacedle::x::loader::gguf::loader_std (model loading)
+  - tokenizers crate (encode/decode)
+  - hacedle::x::provider::candle (inference)
+
+chain:
+  tokenizer.encode("hello")
+  -> embedding_layer.forward()
+  -> transformer_layers[0..n].forward()
+  -> lmhead.forward()
+  -> argmax(logits)
+  -> tokenizer.decode(token_id)
+
+tests:
+  mandatory:
+    - first_token_hello_prompt
+    - first_token_logits_shape
+    - first_token_not_hardcoded
+
+output:
+  - next_token_id: u32
+  - next_token_text: string
+
+audit_owner: CSA
+
+validation_scripts:
+  - brain/audit/scripts/first_token.py
+    owner: CSA
+    mandate: MUST_USE
+```

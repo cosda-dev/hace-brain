@@ -1,0 +1,527 @@
+---
+header:
+  id: SMF://hace.brain.csa.audit.v1
+  intent: EXECUTE_LOGIC
+  status: ACTIVE
+  locale: vi-85
+  authority: CSA
+  datetime: "2026-06-04T00:00:00+07:00"
+  auditor: "Claude Sonnet 4.6 / CSA Role"
+  scope: "engine/hace/brain/{base,master,runtime,hooks,src}"
+  prev_reports:
+    - auditor-brain-structure-20260604.ail
+    - auditor-brain-gaps-20260604.ail
+---
+
+# CSA Brain Audit â€” Full Inspection Report
+## engine/hace/brain/* â€” 2026-06-04
+
+---
+
+## 1. INVENTORY HIEN TRANG (Thuc dia scan)
+
+```yaml
+modules_scanned:
+  brain/base:
+    crate: hace-brain-base
+    files: [lib.rs, executor.rs, intent.rs, planner.rs]
+    status: COMPILABLE
+    completion: 95%
+    notes: "AlgoParticle OK, BrainKernel/BrainRuntime traits solid"
+
+  brain/runtime:
+    crate: hace-brain-runtime
+    files:
+      - src/lib.rs          # ZeusRouter, ZeusRuntime â€” OK
+      - src/bridges/hacedle.rs    # STUB â€” execute_inference fake
+      - src/bridges/hacetral.rs   # STUB â€” no-op invoke
+      - src/prompt/assembler.rs   # Qwen template OK
+      - src/dispatcher.rs   # wires only HacedleBridge â€” HARDCODED
+      - src/executor.rs     # returns empty Vec â€” STUB
+    status: COMPILABLE_STUB
+    completion: 40%
+
+  brain/master:
+    crate: hace-brain-master
+    files:
+      - src/lib.rs          # BrainMasterRuntime::execute() stub
+      - src/dispatcher.rs   # dispatch() -> SioOutcome::default()
+      - src/session.rs      # from_sio() OK, SessionState OK
+      - src/context.rs      # RuntimeSio full struct OK
+      - src/outcome.rs      # SioOutcome struct OK
+      - src/execute/mod.rs  # execute_brain() returns "TODO"
+      - provider/mod.rs     # BrainProvider trait declared
+      - provider/factory.rs # returns DummyProvider always
+      - provider/candle/mod.rs   # EXISTS but NOT READ â€” suspect stub
+      - provider/llama/mod.rs    # EXISTS but NOT READ â€” suspect stub
+      - registry/mod.rs     # 8 registries declared
+      - registry/provider.rs  # BTreeMap OK, no real providers
+    status: COMPILABLE_HOLLOW
+    completion: 35%
+
+  brain/hooks:
+    crate: hace-brain-hooks
+    files: [src/lib.rs]
+    status: COMPILABLE
+    completion: 90%
+    notes: "E4 pass-through complete. E5 feature-gated. Tests OK."
+
+  brain/src (ops+blocks):
+    files:
+      - op/rmsnorm.rs       # OK â€” f32, inplace variant
+      - op/rope.rs          # OK â€” Qwen2.5 theta=1000000
+      - op/matmul.rs        # OK â€” naive GEMM, transpose variant
+      - op/silu.rs          # OK â€” inplace variant
+      - block/attention.rs  # PARTIAL â€” compute_attention_scores uses let mut (immutable binding bug)
+      - block/brain_block.rs  # STUB â€” forward() returns placeholder q
+      - registry/operator_registry.rs  # HashMap present, NO operators registered
+    status: PARTIAL
+    completion: 55%
+```
+
+---
+
+## 2. CRITICAL GAPS â€” DIEM GAY (Priority cao)
+
+### GAP-01 [SEVERITY: CRITICAL] HacedleBridge::execute_inference â€” FAKE
+```yaml
+location: brain/runtime/src/bridges/hacedle.rs
+breach:
+  fn execute_inference(&self, prompt: &str) -> Result<Vec<u32>, &'static str> {
+    # Chuyen byte ASCII thanh u32 â€” KHONG PHAI inference
+    prompt.bytes().map(|b| b as u32).collect()
+  }
+impact: "ZeusRouter route_and_execute() goi CE.Local -> HacedleBridge -> echo bytes"
+impact_chain: "Toan bo inference pipeline tra rac thay vi token IDs"
+fix_direction: |
+  Wire toi HacedleBrain (engine/hace/fem/hacedle/src/lib.rs)
+  Inject HacedleBrain qua trait BrainKernel (da co san trong base)
+  HacedleBridge.invoke() -> self.brain.reason(ctx) -> ReasonResult
+blocked_by: "GAP-05: HacedleBrain chua implement BrainKernel"
+effort: 1h (sau khi GAP-05 done)
+priority: P1
+```
+
+### GAP-02 [SEVERITY: CRITICAL] HacetralBridge â€” no-op total
+```yaml
+location: brain/runtime/src/bridges/hacetral.rs
+breach: |
+  invoke() tra { status: "workflow", result: vec![] } â€” khong goi engine nao
+impact: "Hacetral DSL (Authority Rules) hoan toan bi bo qua"
+fix_direction: |
+  Wire toi HacetralEngine (engine/hace/fem/hacetral/src/runtime.rs)
+  Implement RuntimeBridge -> HacetralEngine::process(sio.prompt)
+effort: 2h
+priority: P1
+```
+
+### GAP-03 [SEVERITY: CRITICAL] RuntimeDispatcher hardcoded HacedleBridge
+```yaml
+location: brain/runtime/src/dispatcher.rs
+breach: |
+  pub struct RuntimeDispatcher { bridge: HacedleBridge }
+  # Chi co 1 bridge â€” HARDCODED â€” khong bao gio goi HacetralBridge
+  # Khong co routing logic dua tren sio.runtime.provider
+impact: "Provider selection logic trong ProviderSelector (master) vo dung"
+fix_direction: |
+  Enum bridge dispatch:
+    "hacedle" | "candle" => HacedleBridge
+    "hacetral" => HacetralBridge
+    _ => HacedleBridge (default)
+  Tham chieu sio.runtime.provider de chon bridge
+effort: 30min
+priority: P1
+```
+
+### GAP-04 [SEVERITY: CRITICAL] BrainMasterRuntime::execute() va dispatcher â€” double stub
+```yaml
+locations:
+  - brain/master/src/lib.rs (execute)
+  - brain/master/src/dispatcher.rs (dispatch)
+breach: |
+  execute():  BrainSession::from_sio(sio); Ok(SioOutcome::default())
+  dispatch(): let _ = session; Ok(SioOutcome::default())
+  # SIO di vao, SioOutcome rong di ra â€” 0 xu ly
+impact: "Master layer hoan toan bypass â€” khong co provider nao duoc goi"
+missing_wiring: |
+  1. ProviderSelector::select(sio) -> ProviderType
+  2. ProviderRegistry::select(Capability::Inference) -> provider_id
+  3. provider.execute(sio) -> SioOutcome
+  4. Propagate ReasonResult -> SioOutcome.answer
+fix_direction: |
+  RuntimeDispatcher phai:
+    a. lay soul_id tu session.soul_id
+    b. chon provider qua ProviderSelector
+    c. resolve provider tu ProviderRegistry
+    d. goi provider.execute(session.runtime_sio)
+effort: 3h
+priority: P1
+```
+
+### GAP-05 [SEVERITY: CRITICAL] execute/mod.rs â€” literal "TODO" string
+```yaml
+location: brain/master/execute/mod.rs
+breach: |
+  pub fn execute_brain() -> &'static str { "TODO" }
+  # Va conflict: pub mod execute trong mod.rs nhung execute.rs, checkpoint.rs, telemetry.rs
+  # khong ton tai -> se fail khi compile voi feature flag
+impact: "Execution pipeline broken. Duplication: function execute_brain declared twice?"
+fix_direction: |
+  Xoa fn execute_brain() stub trong mod.rs
+  Tao execute.rs dung voi BrainSession -> SioOutcome
+  Checkpoint.rs -> save/restore session state
+  TelemetryData.rs -> populate tu RuntimeOutcome.telemetry
+effort: 2h
+priority: P1
+```
+
+---
+
+## 3. MEDIUM GAPS â€” DIEM YEU (Priority trung binh)
+
+### GAP-06 [SEVERITY: MEDIUM] BrainBlock::forward() â€” placeholder
+```yaml
+location: brain/src/block/brain_block.rs
+breach: |
+  forward() {
+    let mut q = vec![0.0f32; self.q_proj_weight.len() / hidden.len()];
+    q  // tra ve vector zero
+  }
+  # Tat ca cac ops (rmsnorm, rope, matmul, silu) da co san
+  # nhung chua duoc goi trong forward()
+  # BrainBlock import crate::vkm::LayerKv â€” VKM CHUA EXIST trong brain/src
+missing: "crate::vkm module â€” KV cache type LayerKv chua implement"
+fix_direction: |
+  B1: Tao brain/src/vkm.rs: pub struct LayerKv { k: Vec<f32>, v: Vec<f32> }
+  B2: Implement forward() dung thu tu:
+    rmsnorm(hidden, rms_attn_norm_weight) -> normed
+    attention_forward(normed, q/k/v weights, kv_cache, pos) -> attn_out (attention.rs co roi)
+    residual: hidden + attn_out
+    rmsnorm(residual, rms_ffn_norm_weight) -> normed2
+    FFN: gate = silu(matmul(normed2, gate_proj)) * matmul(normed2, up_proj)
+         out = matmul(gate, down_proj)
+    residual: residual + out
+effort: 3h
+priority: P2
+```
+
+### GAP-07 [SEVERITY: MEDIUM] attention.rs â€” immutable binding bug
+```yaml
+location: brain/src/block/attention.rs:fn compute_attention_scores
+breach: |
+  let scores = vec![0.0f32; n_heads * n_heads];
+  # scores khai bao khong co mut
+  # scores[i * n_heads + j] = ... -> COMPILE ERROR
+  # n_heads hardcoded la 14 trong softmax() â€” ma thuat toan co dinh
+  # n_kv_heads = 2 hardcoded trong attention_forward â€” Qwen2.5 specific, no config
+impact: "attention.rs se khong compile"
+fix_direction: |
+  let mut scores = vec![...]  # them mut
+  Tach n_kv_heads ra tham so cua attention_forward
+  softmax() nhan row_size thay vi hardcode 14
+effort: 30min
+priority: P2
+```
+
+### GAP-08 [SEVERITY: MEDIUM] OperatorRegistry â€” empty, operators khong duoc register
+```yaml
+location: brain/src/registry/operator_registry.rs
+breach: |
+  OperatorRegistry::new() -> HashMap rong
+  # rmsnorm, rope, matmul, silu deu la free functions, KHONG implement Operator trait
+  # Operator trait co fn execute(&self, input: &[f32], output: &mut [f32]) nhung
+  # matmul() can M, N, K dimensions â€” interface khong match
+impact: "Registry co nhung khong ai dung duoc"
+fix_direction: |
+  Option A (simple): Wrap moi op trong struct:
+    struct RmsNormOp { weight: Vec<f32>, eps: f32 }
+    impl Operator for RmsNormOp { fn execute(...) }
+  Option B (pragmatic): Bo OperatorRegistry, goi op functions truc tiep tu BrainBlock
+  Recommend: Option B cho E4, Option A cho E5 plugin system
+effort: 1h
+priority: P2
+```
+
+### GAP-09 [SEVERITY: MEDIUM] ProviderFactory â€” DummyProvider always returned
+```yaml
+location: brain/master/provider/factory.rs
+breach: |
+  ProviderFactory::create(_cfg) -> Some(Arc::new(DummyProvider::default()))
+  # Ignores cfg.provider_type completely
+  # DummyProvider.execute() -> SioOutcome::default()
+impact: "Bat ky provider nao duoc request deu tra ve output rong"
+fix_direction: |
+  Match cfg.provider_type:
+    ProviderType::Candle   -> CandleProvider::new(cfg)
+    ProviderType::Llama    -> LlamaProvider::new(cfg)
+    ProviderType::Hacetral -> HacetralProvider::new(cfg)  # wrap HacetralBridge
+    _                      -> Err("provider not implemented")
+effort: 2h (sau khi GAP-01,02 resolved)
+priority: P2
+```
+
+---
+
+## 4. LOW GAPS â€” BO SUNG (Priority thap)
+
+### GAP-10 [SEVERITY: LOW] Telemetry type conflict â€” 2 dinh nghia
+```yaml
+locations:
+  - brain/runtime/src/lib.rs: pub struct Telemetry { latency_ms, tokens_used }
+  - brain/runtime/src/outcome.rs: pub struct Telemetry { latency_ms, tokens_used }
+breach: "Duplicate struct Telemetry trong cung crate hace-brain-runtime"
+fix: "Xoa duplicate trong outcome.rs, re-export tu lib.rs"
+effort: 10min
+priority: P3
+```
+
+### GAP-11 [SEVERITY: LOW] BrainExecutor::execute â€” method shadowing
+```yaml
+location: brain/runtime/src/executor.rs
+breach: |
+  impl BrainExecutor {
+    pub fn execute(&self, ...) {...}  # inherent method
+  }
+  impl RuntimeExecutor for BrainExecutor {
+    fn execute(&self, ...) { self.execute(sio) }  # goi chinh no -> infinite recursion
+  }
+fix: |
+  Doi ten inherent method thanh fn execute_internal()
+  RuntimeExecutor::execute() goi self.execute_internal(sio)
+effort: 10min
+priority: P3
+```
+
+### GAP-12 [SEVERITY: LOW] rope.rs test â€” apply_rope(&mut x, &mut x, ...) borrows x hai lan
+```yaml
+location: brain/src/op/rope.rs:test_rope_basic
+breach: |
+  apply_rope(&mut x, &mut x, 0, 8);  # COMPILE ERROR: cannot borrow x as mutable twice
+fix: |
+  let mut q = x.clone();
+  let mut k = x.clone();
+  apply_rope(&mut q, &mut k, 0, 8);
+effort: 5min
+priority: P3
+```
+
+### GAP-13 [SEVERITY: LOW] brain/master chua co canon/ directory
+```yaml
+observation: |
+  brain/master/manifest.ail ton tai nhung khong co canon/ subdirectory
+  Previous reports deu reference engine/hace/brain/canon/ nhung KHONG EXIST
+  brain/reports/ ton tai (da scan)
+impact: "CSA/CRD workflow missing canon source of truth"
+fix: |
+  Tao brain/canon/ voi:
+    brain.ail           - master canonical intent
+    providers.ail       - provider registry spec
+    routing.ail         - ZeusRouter complexity table
+effort: 1h (CRD task, khong phai CTO)
+priority: P3
+```
+
+---
+
+## 5. DEPENDENCY CHAIN â€” UNLOCK ORDER
+
+```yaml
+unlock_chain:
+  P0_BLOCKER:
+    - fem/hacedle/src/lib.rs: implement BrainKernel for HacedleBrain
+    - fem/hacetral/src/runtime.rs: implement BrainKernel for HacetralBrain
+    # NGOAI SCOPE brain/* â€” CTO phai implement truoc
+
+  P1_UNBLOCK_AFTER_P0:
+    - GAP-05: Fix execute/mod.rs (30min)
+    - GAP-03: Fix RuntimeDispatcher multi-bridge (30min)
+    - GAP-07: Fix attention.rs compile error (30min)
+    - GAP-01: Wire HacedleBridge -> HacedleBrain (1h)
+    - GAP-02: Wire HacetralBridge -> HacetralBrain (2h)
+    - GAP-04: Implement MasterRuntime dispatch chain (3h)
+
+  P2_AFTER_P1:
+    - GAP-06: BrainBlock::forward() full impl (3h)
+    - GAP-09: ProviderFactory real dispatch (2h)
+    - GAP-08: OperatorRegistry cleanup (1h)
+
+  P3_CLEANUP:
+    - GAP-10: Telemetry dedup (10min)
+    - GAP-11: BrainExecutor shadowing (10min)
+    - GAP-12: rope test borrow fix (5min)
+    - GAP-13: canon/ directory (1h CRD)
+```
+
+---
+
+## 6. REUSE AUDIT â€” KHONG DUOC BUILD MOI
+
+```yaml
+reuse_enforced:
+  ops_already_exist:
+    - brain/src/op/rmsnorm.rs  -> TAI SU DUNG trong BrainBlock::forward()
+    - brain/src/op/rope.rs     -> TAI SU DUNG trong attention.rs (dang import dung roi)
+    - brain/src/op/matmul.rs   -> TAI SU DUNG trong BrainBlock::forward()
+    - brain/src/op/silu.rs     -> TAI SU DUNG trong FFN gate activation
+
+  prompt_template_exists:
+    - brain/runtime/src/prompt/assembler.rs (QwenTemplate) -> TAI SU DUNG
+    - KHONG tao PromptBuilder moi
+
+  session_types_exist:
+    - brain/master/src/session.rs (BrainSession, SessionId, SoulId) -> TAI SU DUNG
+    - brain/runtime/src/session.rs (SessionManager, Session) -> TAI SU DUNG
+    - KHONG tao SessionContext moi
+
+  error_types_exist:
+    - hace_brain_base::BrainError (4 variants) -> TAI SU DUNG trong BrainKernel impl
+    - brain/master/provider::ProviderError -> TAI SU DUNG
+
+duplication_detected:
+  - "Telemetry struct: 2 copies trong runtime (GAP-10)"
+  - "RuntimeOutcome defined in lib.rs but also re-implied in outcome.rs"
+```
+
+---
+
+## 7. QUALITY GATES STATUS
+
+```yaml
+quality_gates:
+  no_std_core:
+    status: PARTIAL
+    notes: "brain/base OK, brain/runtime OK, brain/master dung alloc (acceptable)"
+
+  no_alloc_enforced:
+    status: FAIL
+    notes: "brain/master, brain/src dung Vec<String> â€” lazy alloc, chua co arena"
+
+  compile_clean:
+    status: FAIL
+    blockers:
+      - attention.rs:compute_attention_scores (immutable binding)
+      - executor.rs (infinite recursion potential)
+      - rope.rs test (double borrow)
+      - brain_block.rs (crate::vkm::LayerKv missing)
+
+  deterministic_output:
+    status: OK
+    notes: "AlgoParticle deterministic. ZeusRouter routing table deterministic."
+
+  error_boundary_defined:
+    status: PARTIAL
+    notes: "BrainError OK. Bridge errors dung &'static str â€” nen upgrade len BrainError"
+
+  hook_integration:
+    status: PARTIAL
+    notes: |
+      ZeusRouter in runtime/src/lib.rs co 4 hook points nhung
+      KHONG IMPORT hace_brain_hooks â€” hook constants la string literals, khong dung consts tu hooks crate
+    fix: "import hace_brain_hooks::HOK_* constants thay vi string literals"
+
+  ze_verify_pipeline:
+    status: BLOCKED
+    notes: "Toan bo pipeline (GAP-01 den GAP-05) chua hoat dong â€” khong the verify"
+```
+
+---
+
+## 8. NEXT TASK SUGGESTIONS (CSA insight â€” khong phai lenhh cho CTO)
+
+```yaml
+next_tasks_suggested:
+
+  TASK-B01 [P1, ~30min, CTO]:
+    title: "Fix compile errors trong brain/src"
+    targets:
+      - attention.rs: them mut vao scores binding
+      - attention.rs: tach n_kv_heads thanh tham so
+      - attention.rs: softmax() nhan row_size dynamic
+      - executor.rs: doi ten inherent method -> execute_internal
+      - rope.rs test: fix double borrow
+    note: "Phai xong truoc khi cargo build pass"
+
+  TASK-B02 [P1, ~30min, CTO]:
+    title: "Fix RuntimeDispatcher multi-bridge routing"
+    target: brain/runtime/src/dispatcher.rs
+    approach: |
+      RuntimeDispatcher { bridges: HashMap<String, Box<dyn RuntimeBridge>> }
+      fn dispatch(&self, sio: RuntimeSio) -> Result<RuntimeOutcome, &str>:
+        let provider = &sio.runtime.provider;
+        self.bridges.get(provider)
+            .or_else(|| self.bridges.get("hacedle"))
+            .ok_or("no bridge")
+            ?.invoke(sio)
+
+  TASK-B03 [P1, ~30min, CTO]:
+    title: "Fix execute/mod.rs â€” xoa fn execute_brain stub"
+    approach: |
+      Xoa fn execute_brain() {} tu mod.rs
+      Tao execute.rs: pub fn execute_brain(session: BrainSession) -> SioOutcome
+      Tao checkpoint.rs: pub struct Checkpoint { session_id, state }
+      Tao telemetry.rs: pub struct TelemetryData { latency_ms, tokens_used }
+
+  TASK-B04 [P2, ~3h, CTO]:
+    title: "Implement BrainBlock::forward() dung cac ops hien co"
+    dependency: "crate::vkm::LayerKv phai ton tai truoc"
+    approach: |
+      B1: Tao brain/src/vkm.rs:
+        pub struct LayerKv { pub k: Vec<f32>, pub v: Vec<f32> }
+      B2: forward() sequence:
+        rmsnorm -> attention_forward -> residual -> rmsnorm -> FFN(gate*up*down) -> residual
+      B3: Dung attention_forward() tu attention.rs (sau khi fix GAP-07)
+
+  TASK-B05 [P2, ~2h, CTO]:
+    title: "Implement MasterRuntime dispatch chain"
+    dependency: "GAP-01, GAP-02 phai done"
+    approach: |
+      BrainMasterRuntime::execute(sio):
+        1. session = BrainSession::from_sio(sio)
+        2. provider_type = ProviderSelector::select(&session.runtime_sio)
+        3. provider = ProviderFactory::create(cfg_from_type)
+        4. outcome = provider.execute(&session.runtime_sio)?
+        5. Return outcome
+
+  TASK-B06 [P3, ~1h, CRD]:
+    title: "Tao brain/canon/ directory voi master specs"
+    files:
+      - brain/canon/brain.ail
+      - brain/canon/providers.ail
+      - brain/canon/routing.ail
+
+  TASK-B07 [P3, ~20min, CTO]:
+    title: "Cleanup duplicates"
+    items:
+      - Remove duplicate Telemetry trong runtime/src/outcome.rs
+      - Thay string literals HOK_* trong runtime/src/lib.rs bang consts tu hace_brain_hooks
+```
+
+---
+
+## 9. SUMMARY METRICS
+
+```yaml
+audit_summary:
+  total_modules: 7
+  total_files_inspected: 37
+  compilable_clean: 2    # brain/base, brain/hooks
+  compilable_stub: 3     # brain/runtime, brain/master, brain/src (ops ok, block/registry partial)
+  compile_broken: 1      # brain/src/block/attention.rs, executor.rs, rope test
+
+  gaps_found:
+    critical: 5   # GAP-01..05
+    medium: 4     # GAP-06..09
+    low: 4        # GAP-10..13
+
+  overall_completion: 48%  # weighted: ops 95%, hooks 90%, base 95%, runtime 40%, master 35%, src/block 30%
+
+  critical_path_to_first_inference:
+    steps: 5
+    total_effort_h: ~8
+    blockers_outside_brain: 1  # fem/hacedle BrainKernel impl
+    can_start_now: [TASK-B01, TASK-B02, TASK-B03]
+    blocked_until_fem_done: [TASK-B05, GAP-01, GAP-02]
+```
+
+---
+*CSA Audit sealed â€” 2026-06-04 â€” authority: CSA (audit only, khong chinh sua code CTO)*

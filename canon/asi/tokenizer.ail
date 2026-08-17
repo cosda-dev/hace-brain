@@ -1,0 +1,99 @@
+---
+header:
+  id: AIL://brain.canon.asi.tokenizer.v1
+  intent: DECLARE_ASI
+  status: ACTIVE
+  version: "1.0.0"
+  authority: CSA
+  updated: "2026-06-05"
+---
+
+# ASI: BrainTokenizer
+
+## Contract
+
+```yaml
+module: "brain/master/src/tokenizer/"
+trait: "BrainTokenizer"
+mandate: "MUST use 'tokenizers = 0.19' crate â€” custom BPE FORBIDDEN"
+
+reason: |
+  Qwen2.5 151936-vocab cl100k-like BPE khong the implement correctly
+  trong <10KB custom code. tokenizers crate da tested, production-grade.
+  3.37KB custom impl -> encode('hello') = ASCII bytes, WRONG.
+
+input_source:
+  primary:   "GGUF metadata KV â€” tokenizer.ggml.tokens + tokenizer.ggml.merges"
+  fallback:  "tokenizer.json sidecar file (HuggingFace format)"
+  load_path: "GgufTokenizer::from_gguf(loaded_model: &LoadedModel)"
+```
+
+## Interface
+
+```rust
+pub trait BrainTokenizer: Send + Sync {
+    // Load vocabulary from GGUF metadata
+    fn from_gguf(model: &LoadedModel) -> Result<Self, TokenizerError>
+    where Self: Sized;
+
+    // text -> token IDs
+    fn encode(&self, text: &str) -> Result<Vec<u32>, TokenizerError>;
+
+    // token IDs -> text
+    fn decode(&self, ids: &[u32]) -> Result<String, TokenizerError>;
+
+    fn vocab_size(&self) -> usize;
+    fn bos_id(&self) -> Option<u32>;
+    fn eos_id(&self) -> Option<u32>;
+}
+```
+
+## Error contract
+
+```yaml
+errors:
+  VocabNotLoaded:  "from_gguf() called before load â€” return Err, no panic"
+  UnknownToken:    "encode: replace with <unk> id, log warning, no panic"
+  Utf8Error:       "decode: lossy utf8, return best-effort string"
+  EmptyInput:      "encode('')  -> Ok(vec![]) â€” not an error"
+```
+
+## Test expectations (fixtures/hello_tokens.json)
+
+```yaml
+model: "Qwen2.5-0.5B"
+cases:
+  - input:  "hello"
+    tokens: [9707]
+  - input:  "Hello world"
+    tokens: [9707, 1879]   # approximate â€” verify against real model
+  - input:  ""
+    tokens: []
+  - input:  " "
+    tokens: [220]
+
+model: "Phi-3-mini"
+cases:
+  - input:  "hello"
+    tokens: [23433]   # verify
+```
+
+## GGUF KV keys
+
+```yaml
+vocab_key:   "tokenizer.ggml.tokens"    # array<string>
+merges_key:  "tokenizer.ggml.merges"    # array<string>
+scores_key:  "tokenizer.ggml.scores"    # array<float>
+model_key:   "tokenizer.ggml.model"     # string: "gpt2"|"llama"|"rwkv"
+bos_key:     "tokenizer.ggml.bos_token_id"
+eos_key:     "tokenizer.ggml.eos_token_id"
+```
+
+## Cargo dependency
+
+```toml
+[dependencies]
+tokenizers = { version = "0.19", default-features = false,
+               features = ["onig"] }
+# onig feature: regex-based pretokenization for cl100k/tiktoken style
+```

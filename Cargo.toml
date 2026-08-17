@@ -1,0 +1,19 @@
+[package]
+name = "hace-brain"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+hace-brain-base = { path = "base" }
+hace-brain-runtime = { path = "runtime" }
+hace-brain-master = { path = "master" }
+
+[lib]
+name = "hace_brain"
+path = "src/lib.rs"
+
+[[test]]
+name = "brain_integration"
+path = "tests/mod.rs"
+required-features = ["std"]

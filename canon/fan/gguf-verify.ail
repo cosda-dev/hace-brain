@@ -1,0 +1,78 @@
+---
+header:
+  id: FAN://brain.gguf.verify.v1
+  intent: DECLARE_FEATURE_IDENTITY
+  status: CANONICAL
+  authority: CRD
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# FAN: GGUF Verify
+
+```yaml
+fan:
+  id: FAN://brain.gguf.verify
+  name: Brain GGUF Verify
+  version: v1
+
+owner:
+  hacedle
+
+steward:
+  brain/master
+
+efr: BRAIN_GGUF_VERIFY
+
+capability:
+  - verify
+  - inspect
+  - tensor_index
+
+required_artifacts:
+  - hacedle::x::loader::gguf::loader_std
+  - hacedle::x::loader::gguf::header
+  - hacedle::x::loader::gguf::tensor_index
+
+output:
+  - model_metadata
+  - tensor_count
+  - architecture
+  - context_length
+  - vocab_size
+  - quantization
+
+cli_commands:
+  - name: brain model verify
+    args: [model_path]
+    alias: model.verify
+
+tests:
+  mandatory:
+    - verify_valid_gguf
+    - verify_invalid_header
+    - verify_tensor_count
+    - verify_metadata
+
+hookpoints:
+  - brain.gguf.loader
+
+assembly_graph:
+  input: model_path
+  flow:
+    model_path
+    -> GgufLoaderStd::load_path()
+    -> validate_magic()
+    -> validate_version()
+    -> build_tensor_index()
+    -> extract_metadata()
+    -> output_verification
+
+audit_owner: CSA
+
+validation_scripts:
+  - brain/audit/scripts/gguf_verify.py
+    owner: CSA
+    mandate: MUST_USE
+```

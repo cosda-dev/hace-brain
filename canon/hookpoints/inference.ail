@@ -1,0 +1,86 @@
+---
+header:
+  id: HOOKPOINT://brain.inference.v1
+  intent: DECLARE_AUTHORITY_BOUNDARY
+  status: CANONICAL
+  authority: CSA
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# Hookpoint: Inference Engine
+
+```yaml
+hookpoint:
+  id: brain.inference
+  name: Brain Inference Engine Hookpoint
+
+authority:
+  owner: hacedle
+  mutable: false
+  steward: brain/master
+
+input:
+  - token_ids:
+      type: array
+      element_type: u32
+  - position:
+      type: u32
+      required: false
+  - kv_cache:
+      type: reference
+      required: false
+
+output:
+  - logits:
+      type: array
+      element_type: f32
+  - next_token:
+      type: u32
+      required: false
+
+chain_dependencies:
+  - brain.gguf.loader
+  - brain.tokenizer
+  - brain.kv-cache
+
+contracts:
+  - contract_id: INFERENCE_V1
+    spec: >
+      Inference engine must:
+      - Accept token IDs from tokenizer
+      - Use KV cache for multi-turn
+      - Produce logits for next token prediction
+      - Support prefill (full context) and decode (single token)
+
+providers:
+  preferred:
+    - path: fem/hacedle/src/x/provider/candle/inference.rs
+      struct: CandleInferenceEngine
+    - path: fem/hacedle/src/x/provider/candle/lmhead.rs
+      struct: LmHead
+    - path: fem/hacedle/src/x/provider/candle/layer.rs
+      struct: TransformerLayer
+    - path: fem/hacedle/src/x/provider/candle/embed.rs
+      struct: EmbeddingLayer
+
+restrictions:
+  - id: RES_001
+    rule: kv_cache_required
+    description: >
+      Multi-turn inference REQUIRES KV cache.
+      No reimplementation in brain/master.
+  - id: RES_002
+    rule: no_duplicate_ops
+    description: >
+      Operator implementations (rmsnorm, rope, silu) MUST
+      reuse brain/master/src/op/* or fem/hacedle operators.
+
+ownership:
+  owner: hacedle
+  steward: brain/master
+  consumers:
+    - brain/runtime
+    - brain/session
+```

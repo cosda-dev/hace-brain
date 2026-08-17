@@ -1,0 +1,41 @@
+# Milestone A3-R1: First Real Token
+
+```yaml
+header:
+  id: MILESTONE_A3_R1
+  intent: TRACK
+  status: IN_PROGRESS
+  priority: P0
+```
+
+## Objective
+```
+model: Qwen2.5-0.5B.gguf
+prompt: "hello"
+output: token_id
+```
+
+## Tasks Completed
+- [x] GGUF Runtime Certification (G1.1-G1.6)
+- [x] LRO Runtime (G2-G3)
+- [x] LRO Manifest + Seal (G4-G5)
+- [x] KV Cache Fusion Benchmark (G6)
+- [x] Brain CLI Canon Structure
+- [x] Hace CLI -> Brain CLI Wiring
+- [x] Binary Build (hace.exe 1.16MB)
+
+## Tasks Pending
+- [ ] GGUF tensor parsing thật (loader_std.rs)
+- [ ] Q4K dequant verification vs llama.cpp
+- [ ] BrainKernel trait implementation
+- [ ] First token generation
+- [ ] Golden replay certification
+
+## Gate Conditions
+```yaml
+required:
+  - gguf_loader: PASS
+  - q4k: PASS
+  - first_token: PASS
+  - replay: PASS
+```

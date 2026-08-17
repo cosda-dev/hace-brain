@@ -1,0 +1,122 @@
+---
+header:
+  id: AIL://brain.reports.csa.canon-stale-update.20260606T120000Z
+  intent: CSA_CANON_UPDATE_REPORT
+  status: ACTIVE
+  authority: CSA
+  datetime: "2026-06-06T12:00:00+07:00"
+---
+
+# Canon Stale Update â€” Session Report
+
+## Files updated
+
+```yaml
+updated:
+  canon/providers.ail:
+    prev: "1.60KB v1.0 (2026-06-04) â€” generic CE list, no violation detail"
+    now:  "4.77KB v2.0 â€” CE status matrix, 3 active violations (V01-V03), target flow"
+    key_additions:
+      - "CE.Hacedle status MISSING with exact gap path"
+      - "PROV-V01: ProviderFactory always-DummyProvider (15-min fix)"
+      - "PROV-V02: CandleProvider::execute() stub"
+      - "PROV-V03: BrainMasterRuntime::execute() void"
+      - "capability_map: Inference/Embedding/Reasoning/Remote routing"
+
+  canon/routing.ail:
+    prev: "1.08KB v1.0 (2026-06-04) â€” generic routing description"
+    now:  "4.02KB v2.0 â€” ZeusRouter canonical, BrainRouter deletion confirmed"
+    key_additions:
+      - "BrainRouter: deleted per GAP-07"
+      - "ZeusRouter dispatch 3-step: classify -> select_ce -> execute"
+      - "CE injection pattern (E4 algo-only vs hacedle-loaded)"
+      - "ROUTE-V01: master never calls ZeusRuntime"
+      - "ROUTE-V02: RuntimeDispatcher dead code, recommend delete"
+
+  canon/fan/fan-table.ail:
+    prev: "1.58KB v1.0 (2026-06-05T09:34) â€” 3 EFCs, no status column"
+    now:  "6.60KB v2.0 â€” 11 EFCs fully mapped"
+    key_additions:
+      - "EFC_BRAIN_TOK_001 (status: WRONG â€” ASCII, not BPE)"
+      - "EFC_BRAIN_DETOK_001 (status: WRONG)"
+      - "EFC_BRAIN_KV_001 (status: SKELETON)"
+      - "EFC_BRAIN_PREFILL_001 (status: SKELETON)"
+      - "EFC_BRAIN_SAMPLE_001 (status: SKELETON)"
+      - "Status legend: REAL/PARTIAL/SKELETON/STUB/STUB_PARTIAL/WRONG/MISSING"
+      - "alpha3_required_efcs with P0 gate list"
+
+  canon/asi/gguf-loader.ail:
+    prev: "1.71KB v1.0 (2026-06-05T09:33) â€” generic IPO spec, no stub finding"
+    now:  "5.09KB v2.0 â€” G1 stub documented, mandatory delegation rule"
+    key_additions:
+      - "g1_audit_result: hardcoded 'qwen2'/291 finding"
+      - "correct_impl: GgufLoader delegates to hacedle::GgufLoaderStd"
+      - "LoadedModel contract: lazy mmap, no eager tensor load"
+      - "Cargo.toml requirement: hace-fem-hacedle dep with gguf-loader feature"
+      - "verify_delegation: gguf_verify.py --stub-check pass criteria"
+```
+
+## Canon consistency state post-update
+
+```yaml
+canon_files:
+  brain.ail:            "v2.0 CURRENT â€” inference chain, CE registry, GAP list"
+  providers.ail:        "v2.0 CURRENT â€” CE matrix, violations"
+  routing.ail:          "v2.0 CURRENT â€” ZeusRouter canonical, BrainRouter deleted"
+  fan/fan-table.ail:    "v2.0 CURRENT â€” 11 EFCs with status"
+  asi/gguf-loader.ail:  "v2.0 CURRENT â€” delegation mandate, stub documented"
+  asi/tokenizer.ail:    "v1.0 CURRENT (2026-06-05)"
+  asi/runtime.ail:      "v1.0 CURRENT (2026-06-05)"
+  asi/candle-runtime.ail: "v1.0 STALE â€” kernel bridge gap not reflected"
+  index.ail:            "v2.0 CURRENT (2026-06-05)"
+  audits/struct-rules.ail: "v1.0 CURRENT (2026-06-05)"
+
+remaining_stale:
+  asi/candle-runtime.ail: |
+    1.38KB, created 2026-06-05T09:33.
+    HacedleKernel bridge gap (kernel/hacedle.rs unchanged 1.74KB) not documented.
+    Low priority â€” update after GAP-T5 (HacedleBrain) resolved.
+  fan/kv-cache.ail: |
+    0.76KB stub â€” predates runtime.ail.
+    Content duplicated by fan/runtime.ail (2.40KB).
+    Action: DELETE fan/kv-cache.ail, reference fan/runtime.ail instead.
+  fan/inference-runtime.ail: |
+    1.20KB â€” audit pending.
+    Likely accurate enough for embed+layer+lmhead EFCs.
+    Low priority.
+```
+
+## Audit run sequence (current accuracy)
+
+```bash
+# 1. Check inference chain
+python3 brain/audit/scripts/inference_chain.py
+
+# 2. Verify GGUF loader delegation
+python3 brain/audit/scripts/gguf_verify.py --stub-check
+
+# 3. Validate KV cache + runtime implementations
+python3 brain/audit/scripts/kv_cache_validation.py
+
+# 4. Check duplication violations (S-05)
+python3 brain/audit/scripts/duplication_check.py
+
+# 5. Full alpha-3 gap matrix
+python3 brain/scripts/alpha3_gap_check.py
+```
+
+## Alpha-3 EFC status snapshot
+
+```yaml
+efc_snapshot_20260606:
+  REAL:         [EFC_BRAIN_TENSOR_IDX_001]
+  PARTIAL:      [EFC_BRAIN_GGUF_LOAD_001, EFC_BRAIN_EMBED_001,
+                 EFC_BRAIN_LAYER_001,     EFC_BRAIN_LMHEAD_001]
+  SKELETON:     [EFC_BRAIN_KV_001, EFC_BRAIN_PREFILL_001, EFC_BRAIN_SAMPLE_001]
+  WRONG:        [EFC_BRAIN_TOK_001, EFC_BRAIN_DETOK_001]
+  STUB_PARTIAL: [EFC_BRAIN_GGUF_META_001]
+
+p0_blockers_count: 5
+  # TOK_001, DETOK_001 (wrong) + KV_001, PREFILL_001, SAMPLE_001 (skeleton)
+  # All 5 must reach REAL before alpha-3 tag
+```

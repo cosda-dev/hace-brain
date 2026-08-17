@@ -1,0 +1,45 @@
+{
+  "_comment": "Expected tokenizer output for known models. Used by F-03-B audit.",
+  "_source":  "canon/asi/tokenizer.ail",
+  "_verify":  "hace brain tokenize '<input>' --model <model.gguf>",
+
+  "qwen2.5_0.5b": {
+    "tokenizer_model": "gpt2",
+    "vocab_size": 151936,
+    "bos_id": 151643,
+    "eos_id": 151645,
+    "cases": [
+      { "input": "",       "tokens": [],               "note": "empty string" },
+      { "input": " ",      "tokens": [220],            "note": "single space" },
+      { "input": "hello",  "tokens": [9707],           "note": "baseline test" },
+      { "input": "Hello",  "tokens": [9707],           "note": "cl100k: same as lowercase for 'hello' -- verify" },
+      { "input": " world", "tokens": [1879],           "note": "space-prefixed word" },
+      { "input": "\n",     "tokens": [198],            "note": "newline" }
+    ],
+    "round_trip_required": true,
+    "note": "Token IDs are approximate -- verify against actual tokenizers crate output with real vocab"
+  },
+
+  "phi3_mini": {
+    "tokenizer_model": "llama",
+    "vocab_size": 32064,
+    "bos_id": 1,
+    "eos_id": 32000,
+    "cases": [
+      { "input": "",      "tokens": [],    "note": "empty" },
+      { "input": "hello", "tokens": null,  "note": "verify against model" }
+    ],
+    "note": "Token IDs for Phi-3 require real model to confirm"
+  },
+
+  "ascii_guard": {
+    "_purpose": "Ensure tokenizer is NOT doing ASCII byte encoding",
+    "cases": [
+      {
+        "input": "hello",
+        "forbidden_output": [104, 101, 108, 108, 111],
+        "note": "ASCII bytes for 'hello' â€” if output matches this, tokenizer is WRONG"
+      }
+    ]
+  }
+}

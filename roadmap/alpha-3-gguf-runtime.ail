@@ -1,0 +1,90 @@
+# Alpha-3 Roadmap - GGUF Runtime Completion
+# Based on CSA audit 2026-06-05
+
+```yaml
+header:
+  id: ROADMAP_ALPHA3_GGUF_RUNTIME
+  intent: PLAN
+  version: v1.0.0
+```
+
+## Era 5 Architecture
+
+```text
+Human Intent
+  ↓
+SIO (Structured Info Object)
+  ↓
+CAT (Contract Action Template)
+  ↓
+Coge (Edge Brain)
+  ↓
+Brain Master Runtime
+  ↓
+hacedle GGUF Loader + Inference
+```
+
+## Week 1: Bridge & Wire
+
+### Day 1-2: GGUF Bridge
+- [x] Delete duplicate brain/master/provider/gguf/* files
+- [x] Wire loader.rs to hacedle::GgufLoaderStd
+- [x] Add tokenizers crate dependency
+
+### Day 3-4: Tokenizer Bridge
+- [ ] Implement BrainTokenizer using tokenizers crate
+- [ ] Wire to GGUF tokenizer metadata
+- [ ] Test: `hace brain tokenize 'hello'` → real tokens
+
+### Day 5-6: Metadata Real Pass-through
+- [ ] Wire BrainGgufLoader::verify() → hacedle loader
+- [ ] Test: `hace brain model verify model.gguf` → real metadata
+
+## Week 2: Inference Chain
+
+### Day 7-8: KV Cache
+- [ ] Implement KvCache struct real
+- [ ] Connect to tensor loading
+- [ ] Test prefill
+
+### Day 9-10: Forward Pass
+- [ ] Wire BrainKernel.reason() → hacedle inference
+- [ ] Test: logits generation
+- [ ] `hace brain logits "hello"` → topk scores
+
+### Day 11-12: First Token
+- [ ] Greedy sampler argmax(logits)
+- [ ] Test: `hace brain prompt "hello"` → "hello world"
+
+## Week 3: Validation
+
+### Day 13-14: Replay Integration
+- [ ] Wire replay.rs to BrainSession
+- [ ] Test replay save/load/run
+
+### Day 15-16: Multi-model Test
+- [ ] Qwen2.5-0.5B verify & inference
+- [ ] Phi-3-mini verify & inference
+- [ ] Llama-nano verify & inference
+
+## Definition of Done
+
+```yaml
+alpha_3_complete_when:
+  - GGUF loader wires to hacedle real
+  - Tokenizer produces real tokens
+  - KV cache supports prefill
+  - Forward pass produces logits
+  - First token generated from real model
+  - Replay system functional
+```
+
+## Critical Path
+
+```mermaid
+graph TD
+  T1[T1: tokenizers dep + tokenizer] --> T4[T4: KV cache]
+  T2[T2: loader wire] --> T4
+  T4 --> T5[T5: forward pass]
+  T5 --> T6[T6: first token]
+```

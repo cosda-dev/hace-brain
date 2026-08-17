@@ -1,0 +1,83 @@
+---
+header:
+  id: AIL://brain.reports.csa.canon-audit-20260605T200000Z
+  intent: CSA_CANON_AUDIT_REPORT
+  status: ACTIVE
+  authority: CSA
+  datetime: "2026-06-05T20:00:00+07:00"
+  scope: "brain/{canon, audit/scripts, audit/features, audit/fixtures}"
+---
+
+# CSA Canon Audit â€” Refined Artifacts
+
+## Files written this session
+
+```yaml
+created_or_replaced:
+  canon/index.ail:                    "4.79KB â€” full module map, alpha3 exit criteria"
+  canon/brain.ail:                    "5.79KB â€” layer map, inference chain, CE registry, GAPs"
+  canon/asi/tokenizer.ail:            "2.61KB â€” BrainTokenizer ASI contract, tokenizers crate mandate"
+  canon/asi/runtime.ail:              "2.96KB â€” KvCache + Prefill + Sampler ASI contracts"
+  canon/fan/tokenizer.ail:            "1.54KB â€” FAN EFC_BRAIN_TOK_001"
+  canon/fan/runtime.ail:              "2.40KB â€” FAN KvCache + Prefill + Sampler"
+  canon/hookpoints/tokenizer.ail:     "2.10KB â€” 6 hookpoints for tokenizer pipeline"
+  canon/audits/struct-rules.ail:      "4.81KB â€” S-01..S-05 structural rules"
+  audit/scripts/gguf_verify.py:       "7.85KB (was 1.73KB) â€” full GGUF parser + stub detector"
+  audit/scripts/inference_chain.py:   "6.23KB (was 1.20KB) â€” 13-step chain tracer"
+  audit/scripts/kv_cache_validation.py: "7.59KB (was 0.83KB) â€” symbol+size+logic validation"
+  audit/scripts/duplication_check.py: "4.24KB NEW â€” S-05 reuse rule enforcer"
+  audit/features/alpha3.ail:          "5.55KB NEW â€” F-01..F-07 feature checklist with P0/P1 gates"
+  audit/fixtures/hello_tokens.json:   "1.66KB NEW â€” expected token IDs, ascii_guard"
+```
+
+## Still missing (not yet created â€” low priority this session)
+
+```yaml
+not_created:
+  canon/asi/candle-runtime.ail: "already exists 1.38KB â€” audit pending"
+  canon/asi/gguf-loader.ail:    "already exists 1.71KB â€” audit pending"
+  canon/fan/fan-table.ail:      "already exists 1.58KB â€” needs tokenizer + runtime entries added"
+  canon/hookpoints/inference.ail: "already exists 1.80KB â€” audit pending"
+  audit/features/crate-structure.ail: "defer â€” struct-rules.ail in canon covers this"
+  audit/fixtures/gguf_mini_fixture:   "binary fixture â€” requires real model file"
+```
+
+## Quick run commands
+
+```bash
+# Kiem tra inference chain hien tai
+python3 brain/audit/scripts/inference_chain.py
+
+# Kiem tra GGUF file + stub detector
+python3 brain/audit/scripts/gguf_verify.py model.gguf
+python3 brain/audit/scripts/gguf_verify.py --stub-check
+
+# Kiem tra KV cache implementation
+python3 brain/audit/scripts/kv_cache_validation.py
+
+# Kiem tra duplication violations
+python3 brain/audit/scripts/duplication_check.py
+
+# Alpha-3 gap tong the
+python3 brain/scripts/alpha3_gap_check.py
+```
+
+## Canon consistency summary
+
+```yaml
+canon_coverage:
+  brain_core:     "COMPLETE â€” brain.ail v2 reflects actual state + gaps"
+  tokenizer:      "COMPLETE â€” asi + fan + hookpoints all created"
+  runtime:        "COMPLETE â€” kv_cache + prefill + sampler ASI defined"
+  struct_rules:   "COMPLETE â€” S-01..S-05 with concrete violation examples"
+  gguf_loader:    "PARTIAL â€” asi/gguf-loader.ail exists but predates G1 stub finding"
+  candle_runtime: "PARTIAL â€” asi/candle-runtime.ail exists, kernel bridge gap not reflected"
+  providers:      "STALE â€” providers.ail (1.6KB) does not reflect CE.Hacedle stub status"
+  routing:        "STALE â€” routing.ail (1.08KB) predates ZeusRouter dual-router finding"
+
+action_for_next_session:
+  - "Update providers.ail â€” reflect CE.Hacedle MISSING, ProviderFactory always-DummyProvider"
+  - "Update routing.ail â€” confirm BrainRouter deleted, ZeusRouter is canonical"
+  - "Update fan/fan-table.ail â€” add tokenizer + runtime EFC entries"
+  - "Audit asi/gguf-loader.ail + candle-runtime.ail for accuracy vs current code"
+```

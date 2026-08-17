@@ -1,0 +1,44 @@
+# Milestone A3-R2: GGUF Certification
+
+```yaml
+header:
+  id: MILESTONE_A3_R2
+  intent: TRACK
+  status: PENDING
+  priority: P1
+```
+
+## Requirements
+```yaml
+certification:
+  header:
+    magic: "GGUF"
+    version: [0, 0, 3, 0]
+  metadata:
+    - architecture
+    - context_length
+    - embedding_length
+    - quant_type
+  tensor_index:
+    - tensor_count: 291
+    - tensor_names
+    - tensor_offsets
+    - tensor_shapes
+    - tensor_types
+```
+
+## Tasks
+- [ ] Parse GGUF header
+- [ ] Extract metadata
+- [ ] Build tensor index
+- [ ] Load tensor weights
+- [ ] Verify tensor shapes match
+
+## Output Target
+```yaml
+model:
+  tensors: 291
+  metadata: 42
+  size: 397MB
+status: CERTIFIED
+```

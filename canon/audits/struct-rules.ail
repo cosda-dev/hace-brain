@@ -1,0 +1,150 @@
+---
+header:
+  id: AIL://brain.canon.audits.struct-rules.v1
+  intent: DECLARE_AUDIT_RULES
+  status: ACTIVE
+  version: "1.0.0"
+  authority: CSA
+  updated: "2026-06-05"
+---
+
+# Audit Rules: Rust Crate Structure
+
+## Rule S-01 â€” No orphan .rs files outside src/
+
+```yaml
+rule:    S-01
+title:   "All .rs module files MUST reside in crate/src/"
+severity: P0_COMPILE_BLOCKER
+rationale: |
+  Cargo resolves lib root as src/lib.rs by default.
+  .rs files in crate root (coge/mod.rs, coge/infer.rs) are
+  INVISIBLE to compiler â€” they do not get compiled.
+
+violation_example:
+  bad:
+    - "coge/mod.rs      (root)"
+    - "coge/infer.rs    (root)"
+    - "coge/lora.rs     (root)"
+    - "coge/run.rs      (root)"
+  good:
+    - "coge/src/lib.rs"
+    - "coge/src/infer.rs"
+    - "coge/src/lora.rs"
+    - "coge/src/run.rs"
+
+current_violation: "engine/hace/brain/coge/ â€” 4 orphan files"
+fix: "mv coge/mod.rs coge/src/lib.rs; mv coge/{infer,lora,run}.rs coge/src/"
+```
+
+## Rule S-02 â€” Every crate directory MUST have Cargo.toml
+
+```yaml
+rule:    S-02
+title:   "Crate directory without Cargo.toml cannot be workspace member"
+severity: P0_COMPILE_BLOCKER
+
+violation_example:
+  bad:
+    - "brain/src/  (has .rs files, no Cargo.toml)"
+    - "brain/io/   (has .rs files, no Cargo.toml)"
+  good:
+    - "brain/base/Cargo.toml  exists"
+    - "brain/master/Cargo.toml exists"
+
+current_violations:
+  brain_src: "engine/hace/brain/src/ â€” no Cargo.toml, 7 .rs files orphaned"
+  brain_io:  "engine/hace/brain/io/ â€” no Cargo.toml, 7 .rs files orphaned"
+
+fix_brain_src: |
+  DECISION (CSA): DELETE brain/src/ entirely.
+  Rationale: ops duplicated in fem/hacedle/src/ops/ (canonical source).
+  attention.rs fix unverifiable while orphaned.
+  If attention fix is needed: cherry-pick into hacedle/ops/attention.rs.
+
+fix_brain_io: |
+  DECISION (CSA): Use engine/hace/io/ (already exists, has RAC variants).
+  brain/io/ files duplicate io/rac* â€” delete and import hace-io crate.
+```
+
+## Rule S-03 â€” No silent stubs (fn f() -> T { T::default() })
+
+```yaml
+rule:    S-03
+title:   "Stub functions MUST emit explicit warn! or return typed error, not silent default"
+severity: P1_QUALITY
+
+rationale: |
+  BrainMasterRuntime::execute() returning SioOutcome::default() silently
+  causes 'success' responses with empty data â€” harder to debug than Err.
+
+required_pattern: |
+  // WRONG:
+  pub fn execute(&self, sio: RuntimeSio) -> Result<SioOutcome, &'static str> {
+      Ok(SioOutcome::default())  // silent stub
+  }
+
+  // CORRECT (E4 stub):
+  pub fn execute(&self, sio: RuntimeSio) -> Result<SioOutcome, BrainError> {
+      Err(BrainError::ReasonFailed {
+          msg: "InferenceEngine not yet wired (GAP-T1)".to_string()
+      })
+  }
+
+  // CORRECT (E4 pass-through with log):
+  pub fn execute(&self, sio: RuntimeSio) -> Result<SioOutcome, BrainError> {
+      log::warn!("brain::execute: falling back to AlgoParticle (CE not loaded)");
+      self.algo_fallback(sio)
+  }
+
+current_violations:
+  - "brain/master/src/lib.rs::execute() -> Ok(SioOutcome::default())"
+  - "brain/master/src/inference/engine.rs::infer() stub"
+  - "brain/runtime/src/dispatcher.rs::dispatch() -> let _ = session"
+```
+
+## Rule S-04 â€” No hardcoded model metadata
+
+```yaml
+rule:    S-04
+title:   "Model architecture/tensor counts MUST NOT be hardcoded"
+severity: P1_CORRECTNESS
+
+violation_example:
+  bad: |
+    // brain/master/src/provider/gguf/loader.rs
+    fn verify(&self, _path: &str) -> GgufInfo {
+        GgufInfo { architecture: "qwen2".into(), tensors: 291 }
+    }
+  good: |
+    fn verify(&self, path: &str) -> Result<GgufInfo, GgufError> {
+        let loader = GgufLoaderStd::open(path)?;
+        Ok(GgufInfo::from_header(&loader.header))
+    }
+
+current_violation: "brain/master/src/provider/gguf/loader.rs (pre-fix)"
+```
+
+## Rule S-05 â€” hacedle ops are canonical, no reimplementation
+
+```yaml
+rule:    S-05
+title:   "Do not reimplement ops that exist in fem/hacedle/src/ops/ or x/loader/gguf/"
+severity: P0_REUSE_VIOLATION
+
+canonical_sources:
+  gguf_parsing:  "fem/hacedle/src/x/loader/gguf/loader_std.rs"
+  tensor_index:  "fem/hacedle/src/x/loader/gguf/tensor_index.rs"
+  rmsnorm:       "fem/hacedle/src/ops/rmsnorm.rs"
+  rope:          "fem/hacedle/src/ops/rope.rs"
+  attention_ops: "fem/hacedle/src/ops/attention.rs"
+  silu:          "fem/hacedle/src/ops/silu.rs"
+  matmul:        "fem/hacedle/src/ops/matmul.rs  (if added)"
+  dequant_q4k:   "fem/hacedle/src/x/loader/dequant/q4_k.rs"
+  candle_layer:  "fem/hacedle/src/x/provider/candle/layer.rs"
+  candle_lmhead: "fem/hacedle/src/x/provider/candle/lmhead.rs"
+
+violation_detection: |
+  audit/scripts/duplication_check.py scans brain/master/src for
+  any re-implementation of the above. Raises P0 if found.
+```

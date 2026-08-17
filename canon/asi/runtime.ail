@@ -1,0 +1,95 @@
+---
+header:
+  id: AIL://brain.canon.asi.runtime.v1
+  intent: DECLARE_ASI
+  status: ACTIVE
+  version: "1.0.0"
+  authority: CSA
+  updated: "2026-06-05"
+---
+
+# ASI: Brain Runtime (KvCache + Prefill + Sampler)
+
+## KvCache
+
+```yaml
+module: "brain/master/src/runtime/kv_cache.rs"
+role:   "Session-scoped KV memory â€” injected per inference call, NOT stored in Brain"
+
+memory_layout:
+  shape:   "[n_layers][max_seq_len][n_kv_heads][head_dim]  f32"
+  example_qwen2_0_5b:
+    n_layers:    24
+    n_kv_heads:  8
+    head_dim:    64
+    max_seq_len: 512    # E4 default, not 2048 (OOM risk on device)
+    ram_f32:     "24 * 512 * 8 * 64 * 4 = 25.2 MB  (acceptable)"
+    ram_f32_2k: "24 * 2048 * 8 * 64 * 4 = 100.7 MB (risky on edge)"
+
+interface:
+  new:     "KvCache::new(n_layers, max_seq, n_kv_heads, head_dim) -> Self"
+  prefill: "prefill(&mut self, pos: usize, k: &[f32], v: &[f32], layer: usize)"
+  get_k:   "get_k(&self, layer: usize, pos: usize) -> &[f32]"
+  get_v:   "get_v(&self, layer: usize, pos: usize) -> &[f32]"
+  len:     "current_seq_len(&self) -> usize"
+  reset:   "reset(&mut self) â€” reuse across requests in same session"
+
+error_contract:
+  OomPrevention: "check seq_len <= max_seq_len BEFORE allocation â€” return Err not panic"
+  ZeroLen:       "new(n_layers=0, ...) -> Err(KvError::InvalidShape)"
+```
+
+## Prefill
+
+```yaml
+module: "brain/master/src/runtime/prefill.rs"
+role:   "Fill KvCache for prompt tokens before generation"
+
+interface:
+  prefill_prompt: |
+    pub fn prefill_prompt(
+        engine:    &HacedleKernel,
+        tokenizer: &dyn BrainTokenizer,
+        kv:        &mut KvCache,
+        token_ids: &[u32],
+    ) -> Result<Vec<f32>, RuntimeError>
+    // Returns: hidden_state after last prompt token
+
+flow: |
+  for (pos, &token_id) in token_ids.iter().enumerate() {
+      let emb = engine.embed(token_id)?;           // [hidden_size]
+      let hs  = engine.forward_layer(pos, emb, kv)?; // all layers
+      // kv updated in-place by forward_layer
+  }
+  // return final hidden_state -> feed to lmhead for first logits
+```
+
+## Sampler
+
+```yaml
+module: "brain/master/src/runtime/logits.rs"
+role:   "logits[vocab_size] -> next token_id"
+
+strategies:
+  Greedy:
+    desc:  "argmax(logits) â€” deterministic, E4 default"
+    impl:  "logits.iter().enumerate().max_by(|a,b| a.1.partial_cmp(b.1)).map(|(i,_)| i as u32)"
+    note:  "No alloc needed, O(vocab) scan"
+
+  TopK:
+    desc:  "sample from top-k by score"
+    impl:  "partial_sort logits, sample from k with softmax weights"
+    k:     "default 40"
+
+  TopP:
+    desc:  "nucleus sampling â€” defer to E4.5"
+    status: FUTURE
+
+interface: |
+  pub enum SampleStrategy { Greedy, TopK(usize), TopP(f32) }
+  pub fn sample(logits: &[f32], strategy: SampleStrategy) -> u32
+
+error_contract:
+  NanLogits: "any logit is NaN -> replace with -inf before sampling, log warn"
+  EmptyVocab: "logits.len() == 0 -> Err(SampleError::EmptyLogits)"
+```

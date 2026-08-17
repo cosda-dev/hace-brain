@@ -1,0 +1,87 @@
+# P0-P1 Runtime Chain - BrainKernel Implementation
+
+```yaml
+header:
+  id: P0_P1_RUNTIME_CHAIN
+  intent: SPEC
+  status: PENDING
+  priority: CRITICAL
+```
+
+## Current Stub Chain
+
+```text
+RuntimeDispatcher
+  -> CandleBrain.execute()
+      -> SioOutcome { status: "success", result: [] }
+```
+
+## Target Clean Chain (Post-P1)
+
+```text
+RuntimeDispatcher
+  -> ProviderFactory.create("hacedle")
+      -> HacedleBrain (implements BrainKernel)
+          -> InferenceEngine
+              -> GGUF Loader
+                  -> Tensor weights
+                      -> First token output
+```
+
+## Files to Implement
+
+```yaml
+brain/master/src/provider/candle.rs:
+  status: STUB
+  action: Wire to InferenceEngine
+  
+brain/runtime/src/bridges/hacedle.rs:
+  status: STUB
+  action: Implement invoke() with HacedleBrain
+  
+brain/master/src/provider/mod.rs:
+  status: CREATED
+  action: Add ProviderFactory
+  
+hacedle/src/x/provider/candle/inference.rs:
+  status: PARTIAL
+  action: Wire exec chain
+```
+
+## BrainKernel Implementation Target
+
+```rust
+impl BrainKernel for HacedleBrain {
+    fn model_id(&self) -> &str { "qwen2.5-0.5b" }
+    
+    async fn reason(&self, ctx: ReasonCtx) -> Result<ReasonResult, BrainError> {
+        let tokens = self.inference.infer(
+            &ctx.prompt,
+            ctx.max_tokens.unwrap_or(64)
+        );
+        
+        Ok(ReasonResult {
+            content: tokens,
+            confidence: 0.95,
+        })
+    }
+}
+```
+
+## Dispatch Flow
+
+```text
+CLI (hace brain run)
+  ↓
+BrainModule.handle()
+  ↓
+RuntimeDispatcher.dispatch()
+  ↓
+CandleBrain.execute() [or ProviderFactory]
+  ↓
+HacedleBrain.reason()
+  ↓
+InferenceEngine
+  ↓
+Real token
+```

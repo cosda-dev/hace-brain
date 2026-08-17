@@ -1,0 +1,36 @@
+# Alpha-3 GGUF Inference Chain - Skeleton Complete
+
+```yaml
+header:
+  id: ALPHA3_GGUF_SKELETON
+  intent: REPORT
+  status: SKELETON_COMPLETE
+```
+
+## G1-G8 Components Created
+
+| Phase | Module | Status | File |
+|-------|--------|--------|------|
+| G1 - Verify | BrainGgufLoader | ✅ skeleton | provider/gguf/loader.rs |
+| G2 - Metadata | GGUFMetadata | ✅ skeleton | provider/gguf/metadata.rs |
+| G3 - Tensor Inv | TensorCatalog | ✅ skeleton | provider/gguf/tensor.rs |
+| G4 - Mmap | GgufMmap | ✅ skeleton | provider/gguf/mmap.rs |
+| G5 - Tokenizer | Tokenizer | ✅ skeleton | tokenizer/mod.rs |
+| G6 - KV Cache | KvCache | ✅ skeleton | runtime/kv_cache.rs |
+| G7 - Logits | Logits | ✅ skeleton | runtime/logits.rs |
+| G8 - First Token | (G7 output) | ⏳ Pending | Pending real forward pass |
+
+## Command Flow Ready
+
+```bash
+hace brain model verify qwen.gguf     # Returns: architecture, tensors, vocab
+hace brain model inspect qwen.gguf      # Returns: metadata KV
+hace brain tokenize "hello"             # Returns: [token_ids]
+hace brain logits "hello"               # Returns: topk scores
+hace brain prompt "hello"               # Returns: first token
+```
+
+## Next: Real GGUF Loading
+- Wire hare-fem-hacedle loader
+- Load actual model tensors
+- Run real forward pass

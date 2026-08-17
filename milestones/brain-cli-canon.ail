@@ -1,0 +1,88 @@
+# Brain CLI Canon Structure
+
+```yaml
+header:
+  id: BRAIN_CLI_CANON
+  intent: SPEC
+  status: IMPLEMENTED
+  priority: HIGH
+```
+
+## Structure
+```text
+brain/
+└── cli/
+    ├── src/
+    │   ├── lib.rs
+    │   ├── command.rs
+    │   ├── router.rs
+    │   ├── executor.rs
+    │   ├── model.rs
+    │   ├── lora.rs
+    │   ├── kv.rs (pending)
+    │   ├── replay.rs
+    │   ├── inspect.rs
+    │   ├── profile.rs
+    │   ├── benchmark.rs
+    │   └── help.rs (pending)
+    └── Cargo.toml
+```
+
+## Commands
+```yaml
+P0_commands:
+  - "hace brain model list"
+  - "hace brain model inspect <path>"
+  - "hace brain model verify <path>"
+  - "hace brain run --model ... --prompt ..."
+  - "hace brain chat --model ..."
+  
+P1_commands:
+  - "hace brain lora attach <path>"
+  - "hace brain lora detach <path>"
+  - "hace brain lora list"
+  - "hace brain lora verify <path>"
+  
+P2_commands:
+  - "hace brain kv inspect"
+  - "hace brain kv stats"
+  - "hace brain kv flush"
+  
+P3_commands:
+  - "hace brain replay --golden <path>"
+  - "hace brain replay certify"
+  - "hace brain replay diff"
+  
+P4_commands:
+  - "hace brain inspect tensor"
+  - "hace brain inspect block <id>"
+  - "hace brain inspect rope"
+  - "hace brain inspect sampler"
+  
+P5_commands:
+  - "hace brain bench"
+  - "hace brain bench q4k"
+  - "hace brain bench lora"
+  
+P6_commands:
+  - "hace brain profile list"
+  - "hace brain profile create"
+  - "hace brain profile activate <name>"
+```
+
+## Integration Flow
+```text
+Hace CLI
+  ↓
+BrainModule (dispatcher)
+  ↓
+BrainExecutor
+  ↓
+BrainRuntime
+  ↓
+BrainKernel
+  ↓
+Hacedle
+  ↓
+GGUF / LRO
+```

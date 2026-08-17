@@ -1,0 +1,144 @@
+---
+header:
+  id: AIL://brain.canon.asi.gguf-loader.v2
+  intent: DECLARE_ASI
+  status: ACTIVE
+  version: "2.0.0"
+  authority: CSA
+  updated: "2026-06-06"
+  prev_version: "1.0.0 (2026-06-05T09:33) â€” predated G1 stub audit finding"
+---
+
+# ASI: GgufLoader
+
+## Finding: G1 loader was hardcoded stub
+
+```yaml
+g1_audit_result:
+  file:    "brain/master/src/provider/gguf/loader.rs"
+  finding: |
+    BrainGgufLoader::verify() returned hardcoded:
+      { architecture: "qwen2", tensors: 291, vocab: 151936 }
+    regardless of actual file path.
+  detection: "python3 audit/scripts/gguf_verify.py --stub-check"
+  fix_status: UNVERIFIED  # loader grew 1.07->1.92KB on 2026-06-06T12:11
+                          # Cargo.toml only grew 20 bytes â€” no hacedle dep added
+  risk: |
+    If loader.rs added inline parsing rather than delegating to hacedle::GgufLoaderStd,
+    this is a S-05 reuse violation AND creates a second diverging GGUF parser.
+```
+
+---
+
+## Mandatory delegation rule
+
+```yaml
+rule: "brain/master GgufLoader MUST delegate to hacedle â€” MUST NOT parse inline"
+rationale: |
+  fem/hacedle/src/x/loader/gguf/ already provides:
+    loader_std.rs   2.31KB â€” GgufLoaderStd::load(path) -> GgufFile
+    header.rs       1.87KB â€” parse magic, version, tensor_count, kv_count
+    tensor_index.rs 3.68KB â€” TensorIndex::build() -> name->offset map
+    tensor_view.rs  1.20KB â€” TensorView for lazy slice access
+    mmap.rs         0.38KB â€” MmapFile for memory-mapped access
+    model_spec.rs   1.89KB â€” ModelSpec { hidden_size, n_heads, n_kv_heads, ffn_dim }
+    quant_router.rs 0.96KB â€” GGML type routing
+
+  Total hacedle GGUF assets: ~12.4KB, battle-tested, no_std compatible.
+  A second inline parser in brain/master = dead weight + divergence risk.
+
+correct_impl: |
+  // brain/master/src/provider/gguf/loader.rs
+  use hace_fem_hacedle::x::loader::gguf::loader_std::GgufLoaderStd;
+  use hace_fem_hacedle::x::loader::gguf::tensor_index::TensorIndex;
+  use hace_fem_hacedle::x::loader::gguf::model_spec::ModelSpec;
+
+  pub struct GgufLoader;
+
+  impl GgufLoader {
+      pub fn load(path: &str) -> Result<LoadedModel, GgufError> {
+          let file    = GgufLoaderStd::open(path)
+              .map_err(|e| GgufError::IoError(e.to_string()))?;
+          let index   = TensorIndex::build(&file)
+              .map_err(|e| GgufError::ParseError(e.to_string()))?;
+          let spec    = ModelSpec::from_metadata(&file.metadata)
+              .unwrap_or_default();
+          Ok(LoadedModel { file, tensor_index: index, model_spec: spec })
+      }
+  }
+```
+
+---
+
+## LoadedModel contract
+
+```yaml
+struct LoadedModel:
+  fields:
+    file:         "GgufLoaderStd â€” owns file handle + mmap"
+    tensor_index: "TensorIndex   â€” name -> TensorEntry { offset, dims, qtype }"
+    model_spec:   "ModelSpec     â€” hidden_size, n_layers, n_kv_heads, head_dim, vocab_size"
+  
+  access_pattern: |
+    // Lazy: tensor data NOT loaded until explicitly accessed
+    let entry  = model.tensor_index.lookup("blk.0.attn_q.weight")?;
+    let slice  = model.file.mmap_slice(entry.offset, entry.byte_len())?;
+    let dequant = hacedle::x::loader::dequant::q4_k::dequant_q4_k(slice, dims);
+```
+
+---
+
+## IPO contract
+
+```yaml
+input:
+  I1: "path: &str â€” absolute or relative path to *.gguf file"
+  I2: "options: LoadOptions { max_tensor_ram_mb: usize }"  # E4 default: 512MB guard
+
+process:
+  P1: "open file, read 4-byte magic, assert == b'GGUF'"
+  P2: "parse header: version u32, tensor_count u64, kv_count u64"
+  P3: "parse kv metadata: architecture, context_length, block_count, vocab..."
+  P4: "build TensorIndex: iterate tensor_count entries, store name->offset"
+  P5: "memory-map file for lazy tensor access (no eager load)"
+
+output:
+  O1: "LoadedModel { file, tensor_index, model_spec }"
+
+errors:
+  GgufError::NotFound:           "path does not exist â€” check before open"
+  GgufError::BadMagic:           "first 4 bytes != GGUF â€” include actual hex in message"
+  GgufError::UnsupportedVersion: "version > 3 â€” emit version number"
+  GgufError::OomRisk:            "estimated tensor RAM > options.max_tensor_ram_mb"
+  GgufError::ParseError:         "malformed KV or tensor table â€” include byte offset"
+  
+  no_panic: true   # all errors returned via Result, never panic!
+```
+
+---
+
+## Cargo.toml requirement
+
+```toml
+# brain/master/Cargo.toml â€” REQUIRED for delegation
+[dependencies]
+hace-fem-hacedle = { path = "../../../../fem/hacedle",
+                     default-features = false,
+                     features = ["alloc", "gguf-loader"] }
+```
+
+---
+
+## Verification
+
+```yaml
+verify_delegation:
+  cmd:   "python3 audit/scripts/gguf_verify.py --stub-check"
+  pass:  "verdict == DELEGATES_OK"
+  fail:  "verdict == HARDCODED_STUB  or  verdict == INLINE_PARSE_OK"
+
+verify_real_output:
+  cmd:   "hace brain model verify qwen.gguf"
+  pass:  "tensor_count matches python3 audit/scripts/gguf_verify.py qwen.gguf output"
+  fail:  "output shows tensor_count: 291 regardless of model"
+```

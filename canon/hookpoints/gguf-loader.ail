@@ -1,0 +1,81 @@
+---
+header:
+  id: HOOKPOINT://brain.gguf.loader.v1
+  intent: DECLARE_AUTHORITY_BOUNDARY
+  status: CANONICAL
+  authority: CSA
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# Hookpoint: GGUF Loader
+
+```yaml
+hookpoint:
+  id: brain.gguf.loader
+  name: Brain GGUF Loader Hookpoint
+
+authority:
+  owner: hacedle
+  mutable: false
+  steward: brain/master
+
+input:
+  - gguf_path:
+      type: path
+      required: true
+      description: Path to GGUF model file
+
+output:
+  - model_metadata:
+      type: struct
+      fields:
+        - architecture: string
+        - context_length: u64
+        - vocab_size: u64
+        - tensor_count: u64
+        - quantization: map
+
+contracts:
+  - contract_id: GGUF_LOADER_V1
+    spec: >
+      GGUF loader must:
+      - Validate magic bytes "GGUF"
+      - Parse header (version, tensor_count)
+      - Build tensor index (name -> offset mapping)
+      - Extract metadata KV pairs
+
+providers:
+  preferred:
+    - path: fem/hacedle/src/x/loader/gguf/loader_std.rs
+      struct: GgufLoaderStd
+      method: load_path
+  fallback:
+    - path: vendor/external/gguf
+      condition: hacedle_unavailable
+
+restrictions:
+  - id: RES_001
+    rule: no_duplicate_parser
+    description: >
+      brain/master SHALL NOT implement metadata parser.
+      Reuse hacedle::x::loader::gguf::metadata.rs
+  - id: RES_002
+    rule: no_local_tensor_reimplementation
+    description: >
+      brain/master SHALL NOT implement tensor indexing.
+      Reuse hacedle::x::loader::gguf::tensor_index.rs
+  - id: RES_003
+    rule: no_stub_verification
+    description: >
+      GGUF verify MUST read actual file, not return hardcoded values.
+
+ownership:
+  owner: hacedle
+  steward: brain/master
+  consumers:
+    - brain/cli
+    - brain/runtime
+    - brain/coge
+```

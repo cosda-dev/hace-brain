@@ -1,0 +1,122 @@
+# Alpha-3 Real Inference Roadmap
+
+```yaml
+header:
+  id: ALPHA3_REAL_INFERENCE_ROADMAP
+  intent: PLAN
+  status: TODO
+```
+
+## Phase P4A - Mock Provider Validation
+
+```yaml
+goal:
+  validate_chain: true
+  
+flow:
+  CLI 
+    → Dispatcher 
+    → InferenceEngine 
+    → BrainKernel 
+    → Provider 
+    → Response
+    
+result:
+  mock_output: "hello" -> "hello" (echo)
+```
+
+## Phase D1 - Provider Capability Registry
+
+```rust
+pub struct ProviderCapability {
+    pub inference: bool,
+    pub embedding: bool,
+    pub reasoning: bool,
+    pub streaming: bool,
+}
+
+pub trait BrainProvider {
+    fn capability(&self) -> ProviderCapability;
+}
+```
+
+Status: ✅ DONE (provider/mod.rs, candle.rs)
+
+## Phase D2 - HacedleBridge Real
+
+Current:
+```
+BrainKernel.reason() -> Stub
+```
+
+Target:
+```
+BrainKernel.reason() 
+  ↓
+InferenceRequest 
+  ↓
+InferenceEngine 
+  ↓
+Provider
+```
+
+Status: ⏳ PENDING
+
+## Phase D3 - GGUF Loader Layer
+
+```text
+provider/
+  gguf/
+    metadata.rs
+    tensor.rs
+    mmap.rs
+    loader.rs
+```
+
+Status: ⏳ PENDING
+
+## Phase D4 - Inference Backend Abstraction
+
+```rust
+pub trait TensorBackend {
+    fn load_model(...);
+    fn infer(...);
+}
+
+impl CandleBackend {}
+impl LlamaCppBackend {}
+impl OnnxBackend {}
+```
+
+Status: ⏳ PENDING
+
+## Phase D5 - SIO Native Inference
+
+Replace:
+```
+Prompt → Provider
+```
+
+With:
+```
+Sio 
+  ↓
+InferenceRequest 
+  ↓
+Provider
+```
+
+Status: ⏳ PENDING
+
+## Alpha-3 Exit Criteria
+
+```yaml
+exit:
+  command: "hace brain prompt hello"
+  generated_token: true
+  full_chain: PASS
+  
+not_required:
+  - GGUF production loading
+  - Real model inference
+```

@@ -1,0 +1,137 @@
+---
+header:
+  id: AIL://brain.reports.auditor.gaps.20260604
+  intent: DECLARE_GAP_REPORT
+  status: ACTIVE
+  locale: vi-85
+  version: "1.0"
+  authority: Auditor
+  datetime: "2026-06-04T08:48:18+07:00"
+---
+
+# Brain Implementation GAPs - Next Task Guide
+
+## Critical Gaps (HIGH Priority)
+
+### 1. BrainKernel Missing cho Hacedle
+
+```rust
+// File: engine/hace/fem/hacedle/src/lib.rs
+// TODO: Implement BrainKernel trait
+// 
+// Current: chỉ có resolver + quant_view
+// Missing: 
+//   - HacedleBrain struct
+//   - impl BrainKernel for HacedleBrain
+//   - impl BrainRuntime for HacedleBrain
+```
+
+### 2. HacedleBridge No-Op
+
+```rust
+// File: engine/hace/brain/runtime/src/bridges/hacedle.rs
+// ACTUAL CODE:
+impl RuntimeBridge for HacedleBridge {
+    fn invoke(&self, sio: RuntimeSio) -> Result<RuntimeOutcome, &'static str> {
+        let _ = sio;
+        Ok(RuntimeOutcome { status: "success".into(), ... }) // STUB!
+    }
+}
+
+// NEEDED:
+impl RuntimeBridge for HacedleBridge {
+    fn invoke(&self, sio: RuntimeSio) -> Result<RuntimeOutcome, &'static str> {
+        // Gọi thật tới HacedleBrain::infer()
+    }
+}
+```
+
+### 3. BrainBlock Forward Stub
+
+```rust
+// File: engine/hace/brain/src/block/brain_block.rs:71-76
+pub fn forward(&self, hidden: &[f32], kv_cache: &mut crate::vkm::LayerKv, pos: usize) -> Vec<f32> {
+    let mut q = vec![0.0f32; self.q_proj_weight.len() / hidden.len()];
+    // MISSING: QKV projection + RoPE + Attention
+    q
+}
+```
+
+## Medium Gaps
+
+### 4. Master Dispatcher Quá Tối
+
+```rust
+// File: engine/hace/brain/master/src/dispatcher.rs:19-22
+pub async fn dispatch(&self, session: &BrainSession) -> Result<SioOutcome, &'static str> {
+    let _ = session; // BỎ QUA TOÀN BỘ INPUT!
+    Ok(SioOutcome::default())
+}
+```
+
+### 5. Operator Registry Empty
+
+```rust
+// File: engine/hace/brain/src/registry/operator_registry.rs
+// Missing: register built-in operators
+// op::rmsnorm, op::rope, op::matmul, op::silu
+```
+
+### 6. KV Cache Missing
+
+```rust
+// File: engine/hace/brain/src/block/brain_block.rs
+// Missing: kv_cache integration
+// TODO: vkm::LayerKv implementation
+```
+
+---
+
+## Fix Priority Order
+
+| Priority | Action | Location | Effort |
+|----------|--------|----------|--------|
+| 1 | Implement BrainKernel cho Hacedle | fem/hacedle/src/lib.rs | 3h |
+| 2 | Wire HacedleBridge tới HacedleBrain | runtime/bridges/hacedle.rs | 1h |
+| 3 | Implement BrainBlock::forward() | src/block/brain_block.rs | 2h |
+| 4 | Implement BrainProvider cho Candle | master/provider/candle/mod.rs | 2h |
+| 5 | Fix Master Dispatcher | master/dispatcher.rs | 1h |
+
+---
+
+## Test Requirements Before Crystallize
+
+```yaml
+tests_required:
+  - name: "q4k_parity"
+    desc: "Q4_K dequant bit-exact with llama.cpp"
+    cmd: "cargo test --test q4k_parity --features std"
+    required_for: "GGUF_PARITY"
+    
+  - name: "rmsnorm_parity"  
+    desc: "RMSNorm vs reference"
+    cmd: "cargo test --test rmsnorm_parity --features std"
+    
+  - name: "rope_pairwise"
+    desc: "RoPE pairwise correctness"
+    cmd: "cargo test --test rope_parity --features std"
+```
+
+---
+
+## COME Integration Points
+
+| Phase | Joint | Status |
+|-------|-------|--------|
+| phase_1 | candle.haria::routing::HuriRouter | ❌ MISSING |
+| phase_2 | hace-fem-router | ⚠️ STUB |
+| phase_3 | rr-fem-ze-evidence | ⚠️ TODO |
+
+---
+
+## Recommendation
+
+1. **First:** Implement HacedleBrain → ZeusRouter dispatch được
+2. **Second:** Wire BrainBlock forward → inference flow hoàn chỉnh
+3. **Third:** Register operators → BrainMaster có thực thi
+4. **Last:** KV cache + evidence bundle (E5)

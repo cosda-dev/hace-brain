@@ -1,0 +1,68 @@
+---
+header:
+  id: ASI://brain.kv-cache.integration.v1
+  intent: DECLARE_INTEGRATION_PATH
+  status: CANONICAL
+  authority: CSA
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# ASI: KV Cache Integration
+
+```yaml
+integration:
+  feature: KV_CACHE_RUNTIME
+  owner: brain/master
+  steward: hacedle
+
+required_structs:
+  - KvCache:
+      fields:
+        - k: Vec<Vec<f32>>  # Key tensors per layer
+        - v: Vec<Vec<f32>>  # Value tensors per layer
+        - n_layers: usize
+        - n_heads: usize
+        - head_dim: usize
+
+required_methods:
+  - prefill(token_ids: &[u32]): Populate cache for all tokens
+  - decode(token_id: u32): Append single token to cache
+  - get(layer: usize): Get cache for layer
+
+dependencies:
+  - hookpoint: brain.gguf.loader
+    reason: Model metadata needed for n_layers, n_heads
+
+prohibited:
+  - path: brain/master/src/runtime/kv_stub.rs
+    reason: Stub violation - ARA_003
+  - path: brain/master/src/runtime/mock_kv.rs
+    reason: Mock violation - RULE_04
+
+templates:
+
+  rust_struct: |
+    pub struct KvCache {
+        pub k: Vec<Vec<f32>>,
+        pub v: Vec<Vec<f32>>,
+        pub n_layers: usize,
+        pub n_heads: usize,
+        pub head_dim: usize,
+    }
+
+  rust_prefill: |
+    pub fn prefill(&mut self, token_ids: &[u32]) {
+        // Process all tokens through embedding + layers
+        // Store K/V in cache
+    }
+
+validation_scripts:
+  - brain/audit/scripts/kv_cache_validation.py
+    owner: CSA
+
+cli_commands:
+  - name: brain kv stats
+    output: cache utilization stats
+```

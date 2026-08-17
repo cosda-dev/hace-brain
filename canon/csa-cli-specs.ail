@@ -1,0 +1,326 @@
+---
+# CSA BRAIN CLI SPECS
+# Dac ta chinh thuc: hace brain <command> + wiring architecture
+
+```yaml
+artifact_id: csa-cli-specs-v1
+artifact_type: CSA_SPECS
+role_origin: CSA
+version: "1.0.0"
+datetime: "2026-06-04"
+locale: en-core / vi-85
+binary: hace.exe (cache/target/release/, 1.16MB built)
+prefix: "hace brain"
+```
+
+---
+
+## S1. OWNERSHIP MODEL
+
+```
+rr/cli           # DNA: CommandStyle, CommandFamily, parse primitives, no_std
+    |
+hace/me/clie     # Execute: Clie, gate_via_me, HookBus, ARA enforce
+    |
+hace/cli         # Surface: Artisan/clap, dispatcher, Registry, CliIR, ir_builder
+    |
+brain/cli        # Domain: BrainCli, BrainAction, BrainRouter, BrainExecutor
+    |
+brain/runtime    # Kernel: BrainKernel, ZeusRouter
+    |
+fem/hacedle      # Inference: GGUF, LRO, operators
+
+source: engine/hace/brain/cli/*   (NOT hace/cli/brain/*)
+dispatch: main.rs->Artisan->ir_builder->dispatcher->gate_via_me->BrainModule->BrainCli
+```
+
+---
+
+## S2. FULL COMMAND LIST
+
+### P0 â€” Model (Alpha-3 Gate G1)
+
+```yaml
+"hace brain model list [--dir <path>]":
+  ir:       {namespace:brain, command:model.list}
+  executor: ModelExecutor::list()
+  runtime:  GgufLoader::scan_dir() -> Vec<GgufMeta>
+  output:   "NAME | SIZE | QUANT | TENSORS"
+
+"hace brain model inspect <path>":
+  ir:       {namespace:brain, command:model.inspect, args:[path]}
+  executor: ModelExecutor::inspect(path)
+  runtime:  GgufLoader::parse_header(path)
+  output:   arch/hidden_size/num_layers/num_heads/vocab_size/tensors/sha256
+  gate:     G1
+
+"hace brain model verify <path>":
+  ir:       {namespace:brain, command:model.verify, args:[path]}
+  executor: ModelExecutor::verify(path)
+  checks:   [magic_match, version_valid, tensor_offsets_aligned, fah_match]
+  gate:     G1
+```
+
+### P0 â€” Run / Chat
+
+```yaml
+"hace brain run --model <path> --prompt <text> [--max-tokens N] [--lora <lro>...]":
+  ir:       {namespace:brain, command:run}
+  executor: RunExecutor::run()
+  chain:    BrainKernel::execute()->HacedleEngine->InferenceEngine::forward()
+  output:   streaming token stdout
+  gate:     first_real_token  # PRIMARY Alpha-3 P0
+
+"hace brain chat --model <path> [--lora <lro>...] [--ctx N]":
+  ir:       {namespace:brain, command:chat}
+  executor: ChatExecutor::run_interactive()
+  requires: KV cache wiring (P2)
+  mode:     interactive multi-turn
+```
+
+### P1 â€” LoRA (Alpha-3 G2-G4)
+
+```yaml
+"hace brain lora list [--dir <path>]":
+  executor: LoraExecutor::list()
+  output:   "ID | TYPE | RANK | BASE_MODEL | ZES | STATUS"
+  gate:     G5
+
+"hace brain lora inspect <path>":
+  executor: LoraExecutor::inspect(path)
+  output:   adapter_type/rank/alpha/targets/tensor_count/fah/zes_expiry
+  gate:     G4
+
+"hace brain lora verify <path>":
+  executor: LoraExecutor::verify(path)
+  checks:   [magic, zes_seal, fah_hash, parent_model_match, not_expired]
+  rejects:  [missing_seal, invalid_hash, wrong_parent, expired_policy]
+  gate:     G4
+
+"hace brain lora attach <path>":
+  executor: LoraExecutor::attach(path)
+  runtime:  ZesVerifier::verify()->LroStack::push()->LroRegistry::register()
+  gate:     G5
+
+"hace brain lora detach <id>":
+  executor: LoraExecutor::detach(id)
+  effect:   LroRegistry::deactivate(id) -- no model reload, base_kv preserved
+
+"hace brain lora stack":
+  executor: LoraExecutor::show_stack()
+  output:   ordered adapters + scaling factors
+```
+
+### P2 â€” KV Cache
+
+```yaml
+"hace brain kv stats":
+  executor: KvExecutor::stats()
+  output:   pages_total/pages_used/base_kv_slots/delta_kv_slots/hit_rate
+
+"hace brain kv inspect [--session <id>]":
+  executor: KvExecutor::inspect(session_id)
+  output:   per-layer KV tensor stats + memory map
+
+"hace brain kv flush [--base-preserve]":
+  executor: KvExecutor::flush(session_id)
+  note:     --base-preserve flushes delta_kv only
+```
+
+### P3 â€” Replay / Certify (Alpha-3 G1 parity)
+
+```yaml
+"hace brain replay --golden <dir> [--block N]":
+  ir:       {namespace:brain, command:replay, args:[golden_dir, block]}
+  executor: ReplayExecutor::replay(golden_dir, block)
+  runtime:  load golden/*.bin -> operator -> compare
+  output:   per-operator error table, max_error vs budget 1e-5
+  gate:     G1
+
+"hace brain replay certify --model <path>":
+  executor: ReplayExecutor::certify(model_path)
+  runs:     [gguf_verify, logits_parity, first_token, lro_overlay]
+  output:   golden/alpha3_certification.yaml
+  gate:     ALL G1-G7
+
+"hace brain replay diff --golden <path> --actual <path>":
+  executor: ReplayExecutor::diff()
+  output:   per-element diff histogram, max/mean/p99 error
+```
+
+### P4 â€” Inspect
+
+```yaml
+"hace brain inspect tensor <name>":
+  executor: InspectExecutor::tensor(name)
+  runtime:  TensorRegistry::get(name)
+  output:   shape/quant_type/byte_size/sample_values
+
+"hace brain inspect block <N>":
+  executor: InspectExecutor::block(n)
+  output:   all tensors in blk.N.* with shapes
+
+"hace brain inspect rope [--pos N --dim N --theta F]":
+  executor: InspectExecutor::rope(pos, dim, theta)
+  output:   cos/sin values + reference comparison
+
+"hace brain inspect lora <name> [--tensor <name>]":
+  executor: InspectExecutor::lora_overlay(name, tensor)
+  output:   base+delta+effective weight stats
+```
+
+### P5 â€” Benchmark
+
+```yaml
+"hace brain bench [--model <path> --runs N]":
+  executor: BenchmarkExecutor::run_full()
+  output:   prefill_time/gen_time/tok_per_sec/memory_peak
+
+"hace brain bench q4k [--size N]":
+  executor: BenchmarkExecutor::run_q4k(size)
+  output:   dequant throughput GB/s
+
+"hace brain bench lora [--lora <path> --switch-every N]":
+  executor: BenchmarkExecutor::run_lora_switch()
+  output:   adapter_switch_overhead/delta_kv_recompute/speedup_vs_full
+  gate:     G6
+```
+
+### P6 â€” Profile
+
+```yaml
+"hace brain profile list":
+  executor: ProfileExecutor::list()
+
+"hace brain profile create <name> --model <path> [--lora <path>...]":
+  executor: ProfileExecutor::create(name, model, lros)
+  saves:    brain/profiles/<name>.yaml
+
+"hace brain profile activate <name>":
+  executor: ProfileExecutor::activate(name)
+  effect:   load model+lro stack from profile
+
+"hace brain profile show <name>":
+  executor: ProfileExecutor::show(name)
+```
+
+---
+
+## S3. WIRING CHANGES REQUIRED
+
+```yaml
+# 1. rr/cli/src/lib.rs -- ADD brain family
+CommandFamily::Brain
+
+const BRAIN_ACTIONS: &[&str] = &[
+  "run","chat",
+  "model.list","model.inspect","model.verify",
+  "lora.list","lora.inspect","lora.verify","lora.attach","lora.detach","lora.stack",
+  "kv.stats","kv.inspect","kv.flush",
+  "replay","replay.certify","replay.diff",
+  "inspect.tensor","inspect.block","inspect.rope","inspect.lora",
+  "bench","bench.q4k","bench.lora",
+  "profile.list","profile.create","profile.activate","profile.show",
+];
+
+# 2. hace/cli/Cargo.toml -- ADD
+hace-brain-cli = { path = "../brain/cli" }
+
+# 3. hace/cli/src/cmd/brain.rs -- REPLACE BrainArgs with subcommand enum
+pub enum BrainCommand {
+  Model(ModelArgs), Lora(LoraArgs), Kv(KvArgs),
+  Run(RunArgs), Chat(ChatArgs), Replay(ReplayArgs),
+  Inspect(InspectArgs), Bench(BenchArgs), Profile(ProfileArgs),
+}
+impl CommandModule for BrainModule {
+  fn handle(&self, ir:CliIR, ctx:&Context) -> Result<()> {
+    hace_brain_cli::dispatch_ir(ir).map_err(|_| CliError::ExecutionFailed)
+  }
+}
+
+# 4. hace/cli/src/main.rs -- REPLACE manual bypass
+fn main() {
+  let cli = Artisan::parse();
+  let ctx = Context::from_env();
+  let ir = ir_builder::from_cli(&cli, &ctx);
+  if let Err(e) = dispatcher::dispatch(ir, ctx) {
+    eprintln!("error: {:?}", e); std::process::exit(1);
+  }
+}
+# DELETE: handle_brain(), manual arg loop
+
+# 5. brain/cli/Cargo.toml -- ADD
+hace-brain-runtime = { path = "../runtime" }
+hace-brain-master  = { path = "../master" }
+hace-fem-hacedle   = { path = "../../fem/hacedle" }
+hace-fem-zes       = { path = "../../fem/zes" }
+
+# 6. brain/cli/src/lib.rs -- EXPORT
+pub fn dispatch_ir(ir: CliIR) -> Result<(), BrainCliError> {
+  BrainExecutor::execute(BrainRouter::route_ir(&ir)?)
+}
+
+# 7. brain/cli/src/executor.rs -- WIRE REAL CALLS (not stubs)
+impl ModelExecutor {
+  fn inspect(path:&str) -> Result<()> {
+    let hdr = GgufLoader::parse_header(path)?;  // REAL -- not println!
+    println!("tensors: {}", hdr.tensor_count);
+    Ok(())
+  }
+}
+impl LoraExecutor {
+  fn verify(path:&str) -> Result<()> {
+    let hdr = LroParser::parse(path)?;
+    ZesVerifier::verify(&hdr, &mmap_bytes(path)?)?;  // HARD_REJECT on fail
+    println!("ZES: VALID"); Ok(())
+  }
+}
+```
+
+---
+
+## S4. ALPHA-3 CLI GATE MAPPING
+
+```yaml
+G1_GGUF_RUNTIME:  "hace brain replay certify" + "hace brain model verify qwen2.5-0.5b.gguf"
+G2_SINGLE_LRO:    "hace brain run --model ... --lora coding.lro --prompt hello"
+G3_MULTI_LRO:     "hace brain lora stack" -> 3x adapters deterministic
+G4_ZES_ENFORCE:   "hace brain lora verify tampered.lro" -> HardReject
+G5_ADAPTER_REG:   "hace brain lora list" + attach/detach no model reload
+G6_KV_FUSION:     "hace brain bench lora" -> speedup > 3x
+G7_CLI_CERT:      all P0-P3 non-stub output
+
+p0_minimum:
+  commands: [model.inspect, model.verify, run]
+  wiring:   [main.rs fix, BrainModule->BrainCli, ModelExecutor->GgufLoader real]
+  est:      2-4h focused CTO work
+```
+
+---
+
+## S5. ERRORS
+
+```yaml
+BrainCliError::ModelNotFound{path}:    exit 1
+BrainCliError::SealRejected{reason}:   exit 2
+BrainCliError::InferenceFailed{msg}:   exit 3
+BrainCliError::GoldenMismatch{op,err}: exit 4
+BrainCliError::KernelNotReady:         exit 5  # canary for stub detection in CI
+```
+
+---
+
+## S6. CTO EXECUTION ORDER
+
+```yaml
+step_1: main.rs    -- Replace bypass with Artisan::parse()+dispatcher    30min
+step_2: rr/cli     -- Add CommandFamily::Brain + BRAIN_ACTIONS            20min
+step_3: cli Cargo  -- Add hace-brain-cli dep                              5min
+step_4: cmd/brain  -- BrainArgs -> BrainCommand subcommand enum           45min
+step_5: brain Cargo -- Add brain-runtime + fem-hacedle deps               10min
+step_6: executor   -- ModelExecutor::inspect/verify -> GgufLoader REAL    2-3h
+step_7: executor   -- LoraExecutor::verify -> LroParser+ZesVerifier       2h
+
+total: 6-8h
+alpha3_cli_ready_after: step_6
+```

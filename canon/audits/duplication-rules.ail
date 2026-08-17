@@ -1,0 +1,74 @@
+---
+header:
+  id: AUDIT://brain.duplication-rules.v1
+  intent: DECLARE_DUPLICATION_AUDIT
+  status: CANONICAL
+  authority: CSA
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# Duplication Audit Rules
+
+```yaml
+duplication_rules:
+
+  - id: DUP_001
+    name: NO_DUPLICATE_METADATA_PARSER
+    check: >
+      If metadata.rs exists in brain/master/provider/gguf,
+      check if GgufMetadata already exists in hacedle
+    violation:
+      severity: FAIL
+      action: DELETE_AND_REEXPORT
+    reference: FAN://brain.gguf.verify
+
+  - id: DUP_002
+    name: NO_DUPLICATE_TENSOR_INDEX
+    check: >
+      If tensor.rs exists in brain/master/provider/gguf,
+      check if TensorIndex exists in hacedle
+    violation:
+      severity: FAIL
+      action: DELETE_AND_REEXPORT
+    reference: FAN://brain.gguf.verify
+
+  - id: DUP_003
+    name: NO_DUPLICATE_LOADER
+    check: >
+      If loader.rs has hardcoded output,
+      check if GGUF file is actually read
+    violation:
+      severity: FAIL
+      action: REPLACE_WITH_DELEGATION
+    reference: HOOKPOINT://brain.gguf.loader
+
+  - id: DUP_004
+    name: NO_STUB_RUNTINE
+    check: >
+      If inference returns without calling hacedle,
+      it's a stub
+    violation:
+      severity: FAIL
+      action: REJECT_CERTIFICATION
+    reference: HOOKPOINT://brain.inference
+
+audit_targets:
+  - path: brain/master/src/provider/gguf/
+    check: DUPLICATION_VS_HACEDLE
+  - path: brain/master/src/runtime/
+    check: STUB_VS_REAL
+  - path: brain/master/src/inference/
+    check: DELEGATION_VS_REIMPL
+
+verification_commands:
+
+  - command: "hace brain model verify <path>"
+    expected: "REAL metadata from file"
+    fail_if: "hardcoded qwen2/291"
+
+  - command: "hace brain tokenize hello"
+    expected: "token IDs from tokenizer"
+    fail_if: "hardcoded or missing"
+```

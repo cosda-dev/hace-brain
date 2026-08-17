@@ -1,0 +1,163 @@
+---
+header:
+  id: AIL://brain.canon.fan.fan-table.v2
+  intent: DECLARE_FAN_TABLE
+  status: ACTIVE
+  version: "2.0.0"
+  authority: CSA
+  updated: "2026-06-06"
+  prev_version: "1.0.0 (2026-06-05T09:34) â€” missing tokenizer + runtime + sampler EFCs"
+---
+
+# FAN Master Table â€” Brain Runtime EFCs
+
+## Table
+
+```yaml
+# EFC_ID | RFN | crate_path | status | detail_file
+fan_entries:
+
+  EFC_BRAIN_GGUF_LOAD_001:
+    rfn:        "RFN://brain.gguf.loader"
+    path:       "brain/master/src/provider/gguf/loader.rs"
+    input:      "path: &str  (*.gguf)"
+    output:     "LoadedModel { tensor_index, model_spec, mmap_handle }"
+    error:      "GgufError::{NotFound, BadMagic, OomRisk, UnsupportedVersion}"
+    delegate:   "fem/hacedle/src/x/loader/gguf/loader_std.rs  (MANDATORY)"
+    status:     STUB_PARTIAL    # loader grew 1.07->1.92KB but delegation unverified
+    detail:     "canon/fan/gguf-verify.ail"
+    audit:      "canon/asi/gguf-loader.ail"
+    test_cmd:   "python3 audit/scripts/gguf_verify.py --stub-check"
+
+  EFC_BRAIN_GGUF_META_001:
+    rfn:        "RFN://brain.gguf.metadata"
+    path:       "brain/master/src/provider/gguf/loader.rs  (same file)"
+    input:      "LoadedModel (from EFC_BRAIN_GGUF_LOAD_001)"
+    output:     "GgufMeta { architecture, context_length, block_count, head_count, vocab_size, tokenizer_model }"
+    status:     PARTIAL
+    detail:     "canon/fan/gguf-verify.ail"
+    test_cmd:   "hace brain model inspect model.gguf"
+
+  EFC_BRAIN_TENSOR_IDX_001:
+    rfn:        "RFN://brain.gguf.tensor_index"
+    path:       "fem/hacedle/src/x/loader/gguf/tensor_index.rs  (canonical)"
+    input:      "GGUF file handle after header parse"
+    output:     "TensorIndex { name->TensorEntry{offset,dims,qtype} }"
+    status:     REAL            # 3.68KB, created 2026-06-04
+    detail:     "No separate FAN â€” embedded in gguf-verify.ail"
+    test_cmd:   "hace brain model tensors model.gguf"
+
+  EFC_BRAIN_TOK_001:
+    rfn:        "RFN://brain.tokenizer.bpe_gguf"
+    path:       "brain/master/src/tokenizer/mod.rs"
+    input:      "text: &str + LoadedModel (tokenizer KV from GGUF)"
+    output:     "Vec<u32>  e.g. 'hello'->[9707]"
+    error:      "TokenizerError::{VocabNotLoaded, EncodeFailed, Utf8Error}"
+    dep:        "tokenizers = 0.19 (crate REQUIRED, custom BPE FORBIDDEN)"
+    status:     WRONG           # 3.37KB custom = ASCII bytes, not BPE
+    detail:     "canon/fan/tokenizer.ail"
+    audit:      "canon/asi/tokenizer.ail"
+    fixture:    "audit/fixtures/hello_tokens.json"
+    test_cmd:   "hace brain tokenize 'hello'"
+
+  EFC_BRAIN_DETOK_001:
+    rfn:        "RFN://brain.tokenizer.bpe_decode"
+    path:       "brain/master/src/tokenizer/mod.rs  (same crate)"
+    input:      "&[u32]"
+    output:     "String"
+    status:     WRONG           # same wrong impl as encode
+    detail:     "canon/fan/tokenizer.ail"
+    test_cmd:   "hace brain detokenize 9707"
+
+  EFC_BRAIN_KV_001:
+    rfn:        "RFN://brain.runtime.kv_cache"
+    path:       "brain/master/src/runtime/kv_cache.rs"
+    input:      "ModelSpec { n_layers, n_kv_heads, head_dim } + max_seq_len"
+    output:     "KvCache (owns f32 k/v tensors)"
+    memory:     "24*512*8*64*4 = 25.2MB for Qwen2.5-0.5B@seq512"
+    error:      "KvError::{AllocFailed, InvalidShape}  â€” NO panic"
+    status:     SKELETON        # 1.0KB, methods not fully implemented
+    detail:     "canon/fan/runtime.ail"
+    audit:      "canon/asi/runtime.ail"
+    test_cmd:   "python3 audit/scripts/kv_cache_validation.py"
+
+  EFC_BRAIN_PREFILL_001:
+    rfn:        "RFN://brain.runtime.prefill"
+    path:       "brain/master/src/runtime/prefill.rs"
+    input:      "token_ids: &[u32] + KvCache + HacedleKernel"
+    output:     "last_hidden: Vec<f32>[hidden_size]"
+    error:      "RuntimeError::{LayerFailed, KvFull}"
+    status:     SKELETON        # 0.54KB â€” loop body not implemented
+    detail:     "canon/fan/runtime.ail"
+    audit:      "canon/asi/runtime.ail"
+
+  EFC_BRAIN_EMBED_001:
+    rfn:        "RFN://brain.candle.embed"
+    path:       "fem/hacedle/src/x/provider/candle/embed.rs"
+    input:      "token_id: u32"
+    output:     "Vec<f32>[hidden_size]"
+    status:     PARTIAL         # 1.42KB, likely real but unverified
+    detail:     "canon/fan/inference-runtime.ail"
+
+  EFC_BRAIN_LAYER_001:
+    rfn:        "RFN://brain.candle.transformer_layer"
+    path:       "fem/hacedle/src/x/provider/candle/layer.rs"
+    input:      "hidden: Vec<f32>, pos: usize, kv: &mut KvCache"
+    output:     "Vec<f32>[hidden_size]"
+    status:     PARTIAL         # 2.41KB
+    detail:     "canon/fan/inference-runtime.ail"
+
+  EFC_BRAIN_LMHEAD_001:
+    rfn:        "RFN://brain.candle.lmhead"
+    path:       "fem/hacedle/src/x/provider/candle/lmhead.rs"
+    input:      "hidden: Vec<f32>[hidden_size]"
+    output:     "logits: Vec<f32>[vocab_size]"
+    status:     PARTIAL         # 3.12KB â€” THE logits source
+    detail:     "canon/fan/inference-runtime.ail"
+
+  EFC_BRAIN_SAMPLE_001:
+    rfn:        "RFN://brain.runtime.sampler"
+    path:       "brain/master/src/runtime/logits.rs"
+    input:      "logits: &[f32] + SampleStrategy"
+    output:     "next_token_id: u32"
+    strategies: [Greedy, TopK(40)]
+    error:      "SampleError::{NanLogits, EmptyVocab}  â€” replace NaN with -inf"
+    status:     SKELETON        # 0.71KB â€” strategy enum, no argmax impl
+    detail:     "canon/fan/runtime.ail"
+    audit:      "canon/asi/runtime.ail"
+```
+
+---
+
+## Status legend
+
+```yaml
+status_codes:
+  REAL:         "Implemented, tested, production-usable"
+  PARTIAL:      "Implemented but not fully verified or connected"
+  SKELETON:     "Struct/interface defined, computation not implemented"
+  STUB:         "Returns hardcoded/default value silently"
+  STUB_PARTIAL: "Partially real but key path is still stub"
+  WRONG:        "Exists but produces incorrect output (e.g. ASCII != BPE)"
+  MISSING:      "File or directory does not exist"
+```
+
+---
+
+## Alpha-3 gate: EFCs required
+
+```yaml
+alpha3_required_efcs:
+  P0_must_pass:
+    - EFC_BRAIN_GGUF_LOAD_001   # G1 real delegation
+    - EFC_BRAIN_TOK_001          # G5 BPE correct
+    - EFC_BRAIN_DETOK_001        # G5 decode correct
+    - EFC_BRAIN_KV_001           # G6 real alloc
+    - EFC_BRAIN_PREFILL_001      # G6 loop body
+    - EFC_BRAIN_LMHEAD_001       # G7 logits (verify real)
+    - EFC_BRAIN_SAMPLE_001       # G8 greedy argmax
+
+  currently_passing: [EFC_BRAIN_TENSOR_IDX_001]
+  currently_wrong:   [EFC_BRAIN_TOK_001, EFC_BRAIN_DETOK_001]
+  currently_skeleton: [EFC_BRAIN_KV_001, EFC_BRAIN_PREFILL_001, EFC_BRAIN_SAMPLE_001]
+```

@@ -1,0 +1,61 @@
+# Alpha-3 Exit Criteria
+
+```yaml
+header:
+  id: ALPHA3_EXIT
+  intent: GATE
+  status: PENDING
+  priority: CRITICAL
+```
+
+## CRD Gate Conditions
+All following must PASS before Alpha-4:
+
+```yaml
+exit_criteria:
+  gguf_loader:
+    status: PENDING
+    file: fem/hacedle/src/x/loader/gguf/loader_std.rs
+    
+  q4k:
+    status: PENDING
+    max_abs_error: < 1e-5
+    reference: llama.cpp
+    
+  first_token:
+    status: PENDING
+    model: qwen2.5-0.5b.gguf
+    prompt: "hello"
+    output: token_id
+    
+  replay:
+    status: PENDING
+    golden_blocks: 24
+    all_pass: true
+    
+  lro_attach:
+    status: PENDING
+    adapter_loading: true
+    overlay_composition: true
+```
+
+## Do NOT Proceed to Alpha-4 Until All PASS
+
+```yaml
+blocked_until:
+  - Aura Orch
+  - Coge
+  - Alliag
+  - Zeus Dynamic
+```
+
+## Priority Order (CTO Focus)
+```yaml
+P0: first_real_token
+P1: replay_certification
+P2: lro_runtime
+P3: dynamic_brain
+P4: sio_boundary
+P5: aura_hydration
+P6: alliag_ecosystem
+```

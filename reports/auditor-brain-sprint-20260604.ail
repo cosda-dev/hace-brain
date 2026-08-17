@@ -1,0 +1,94 @@
+---
+header:
+  id: AIL://brain.reports.auditor.sprint.20260604
+  intent: DECLARE_SPRINT_REPORT
+  status: ACTIVE
+  locale: vi-85
+  version: "1.0"
+  authority: Auditor
+  datetime: "2026-06-04T10:00:00+07:00"
+---
+
+# Brain Sprint 1-2 Completion Report
+
+## Completed Tasks
+
+### Task B01: BrainKernel Stub
+- `fem/hacedle/src/brain_kernel.rs` - HacedleBrain struct với load_model/infer
+- Export từ `fem/hacedle/src/lib.rs`
+
+### Task B02: HacedleBridge Wire
+- `brain/runtime/src/bridges/hacedle.rs` - invoke gọi HacedleBrain thực
+- RuntimeDispatcher multi-bridge support
+
+### Task B02.5: ZeusRuntime Integration
+- `brain/runtime/src/lib.rs` - with_hacedle() method
+
+### Task B03: GGUF loader_std
+- `fem/hacedle/src/x/loader/gguf/loader.rs` - load_std parse header + tensor_count
+- `fem/hacedle/src/x/loader/gguf/tensor_index.rs` - TensorInfo parsing
+
+### Task B04: BrainMasterRuntime
+- `brain/master/src/lib.rs` - execute_sync/execute methods
+- `brain/master/src/dispatcher.rs` - dispatch tới CandleBrain
+
+### Task B05: execute_brain
+- `brain/master/execute/execute.rs` - execute_brain(sio, dispatcher) thực
+
+---
+
+## Gate Status Update
+
+| Gate | Status | Notes |
+|------|--------|-------|
+| BrainKernel dispatch | ✅ DONE | Interface + stub |
+| GGUF tensor load | ⚠️ PARTIAL | Header parsed, tensor_index ready |
+| HacedleBridge invoke | ✅ DONE | Wire tới HacedleBrain |
+| execute_brain | ✅ DONE | dispatcher.dispatch() |
+| block0 parity | ❌ TODO | Cần tensor data |
+| SKB hydration | ❌ TODO | Chưa wire SIO → SKB |
+
+---
+
+## File Changes Summary
+
+```yaml
+created:
+  - fem/hacedle/src/brain_kernel.rs
+  - fem/hacedle/src/x/loader/gguf/truth_loader.rs
+  - fem/hacedle/src/x/loader/gguf/tensor_index.rs
+  - brain/runtime/src/planner.rs
+  - brain/master/execute/execute.rs
+  - brain/tests/block0_loader_test.rs
+  - brain/tests/block_forward_test.rs
+
+modified:
+  - fem/hacedle/src/lib.rs
+  - fem/hacedle/Cargo.toml
+  - fem/hacedle/src/x/loader/gguf/mod.rs
+  - fem/hacedle/src/x/loader/gguf/loader.rs
+  - brain/runtime/src/bridges/hacedle.rs
+  - brain/runtime/src/dispatcher.rs
+  - brain/runtime/src/lib.rs
+  - brain/runtime/Cargo.toml
+  - brain/master/src/lib.rs
+  - brain/master/src/dispatcher.rs
+  - brain/master/src/outcome.rs
+  - brain/master/execute/mod.rs
+  - brain/src/block/brain_block.rs
+
+reports:
+  - brain/reports/auditor-brain-structure-20260604.ail
+  - brain/reports/auditor-brain-gaps-20260604.ail
+  - brain/reports/auditor-brain-impl-20260604.ail
+  - brain/reports/auditor-brain-sprint-20260604.ail
+```
+
+---
+
+## Next Sprint (Sprint 3)
+
+1. **operator replay tests** - rope/rmsnorm/matmul parity
+2. **block0 forward** - BrainBlock forward vs golden
+3. **SKB hydration** - SIO.query → skb dispatch
+4. **Qwen2.5-0.5B certification** - tensor_count verification

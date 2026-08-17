@@ -1,0 +1,44 @@
+# CSO Runtime Chain Report - 2026-06-04
+
+```yaml
+header:
+  id: CSO_RUNTIME_CHAIN_20260604
+  intent: REPORT
+  status: IN_PROGRESS
+  author: CTO_ROLE
+```
+
+## FES Chain Status
+
+```text
+CLI (AS)     → ✅ 80% (brain/cli/* structure)
+Runtime (HA) → ✅ 60% (ProviderFactory wired)
+Kernel (TI)  → ✅ 50% (BrainKernel trait defined)
+Provider (PI)→ ⏳ 40% (CandleBrain stub)
+```
+
+## Files Created/Modified
+
+| Layer | Module | Status | File |
+|-------|--------|--------|------|
+| CLI | brain/cli/ | IMPLEMENTED | src/* (7 files) |
+| Runtime | master/ | UPDATED | dispatcher.rs, provider/mod.rs |
+| Kernel | kernel/ | CREATED | hacedle.rs, mod.rs |
+| Provider | provider/ | CREATED | candle.rs |
+
+## Stub Removal Progress
+
+```diff
+- RuntimeDispatcher { candle_provider: CandleBrain }
++ RuntimeDispatcher { provider: Box<dyn BrainProvider> }
+
+- CandleBrain::execute() -> Stub outcome
++ BrainKernel::reason() -> trait implementation (pending real dispatch)
+```
+
+## Next Priority (CRD)
+
+1. **P0-P1 Complete** → Wire HacedleBrain to InferenceEngine
+2. **P2** → Real provider dispatch via ProviderFactory
+3. **P3** → First token generation
+4. **P4-P6** → GGUF optimization, LoRA, Benchmark, Profile

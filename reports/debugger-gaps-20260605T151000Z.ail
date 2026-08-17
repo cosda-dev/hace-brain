@@ -1,0 +1,299 @@
+---
+header:
+  id: AIL://brain.reports.debugger.gaps.20260605
+  intent: DEBUGGER_GAP_DETECTION
+  status: ACTIVE
+  authority: DEBUGGER
+  locale: en
+  version: "1.0.0"
+  datetime: "2026-06-05T15:10:00+07:00"
+  scope:
+    - brain/master/src/tokenizer
+    - brain/master/src/inference/engine.rs
+    - brain/master/src/outcome.rs
+    - brain/master/src/provider/candle.rs
+    - brain/master/src/runtime
+    - fem/hacedle/src/x/provider/candle/tokenizer.rs
+    - fem/hachedle/src/x/provider/candle/lmhead.rs
+    - coge
+---
+
+# 🐛 Debugger Report - Brain Master Gaps & Errors
+
+## Executive Summary
+
+| Component | Status | Priority | Issue |
+|-----------|--------|----------|-------|
+| SioOutcome Type | ❌ ERROR | CRITICAL | Type mismatch between struct and enum usage |
+| Tokenizer BPE | ⚠️ GAP | HIGH | Uses ASCII fallback instead of real BPE |
+| Model Weights | ⚠️ GAP | HIGH | Empty weights in LMHead, EmbedEngine |
+| KV Cache | ⚠️ GAP | MEDIUM | Struct exists but not wired to inference |
+| Coge Module | ❌ ERROR | MEDIUM | Orphan files at root level |
+| Build System | ❌ ERROR | HIGH | Missing cross-compile tools (onig_sys) |
+
+---
+
+## GAP-001: SioOutcome Type Mismatch [CRITICAL]
+
+**Location:** `brain/master/src/provider/candle.rs:93` vs `brain/master/src/outcome.rs:6`
+
+**Error:** Runtime type mismatch causing compile failure.
+
+**Details:**
+```rust
+// candle.rs:93 - Uses enum syntax
+Ok(SioOutcome::Success {
+    text: response.text,
+    tokens: response.tokens,
+})
+
+// outcome.rs:6 - SioOutcome is a STRUCT, not enum
+pub struct SioOutcome {
+    pub status: String,
+    pub result: Vec<u8>,
+    pub answer: String,
+    // ... other fields
+}
+```
+
+**Impact:** Compile error - cannot use enum variant syntax on struct.
+
+**Fix Required:**
+```rust
+// Option A: Convert to enum in outcome.rs
+pub enum SioOutcome {
+    Success { text: String, tokens: Vec<u32> },
+    Error { message: String },
+}
+
+// Option B: Use struct syntax in candle.rs
+Ok(SioOutcome {
+    status: String::from("success"),
+    result: response.tokens.iter().map(|&t| t as u8).collect(),
+    answer: response.text,
+    confidence: 0.0,
+    reasoning_hash: String::new(),
+    evidence: Vec::new(),
+    recommendations: Vec::new(),
+    commands: Vec::new(),
+    telemetry: Telemetry::default(),
+})
+```
+
+---
+
+## GAP-002: Tokenizer - ASCII Fallback Instead of BPE [HIGH]
+
+**Location:** `fem/hacedle/src/x/provider/candle/tokenizer.rs:47`
+
+**Error:** BpeTokenizer.encode_bpe() falls back to ASCII bytes when no merges are loaded.
+
+**Details:**
+```rust
+pub fn encode_bpe(&self, text: &str) -> Vec<u32> {
+    // Apply BPE merges if available
+    if self.merges.is_empty() {
+        // Simple tokenization fallback - AUDIT RED FLAG!
+        text.bytes().map(|b| b as u32).collect()  // Returns [104, 101, 108, 108, 111] for "hello"
+    } else {
+        self.apply_bpe_merges(text)
+    }
+}
+```
+
+**Impact:** 
+- `encode('hello')` returns `[104, 101, 108, 108, 111]` (ASCII) instead of proper BPE tokens like `[9707, 13]`
+- All inference produces garbage tokens
+
+**Fix Required:**
+1. Load vocab from GGUF metadata via `load_from_gguf()`
+2. Implement proper BPE merge algorithm in `apply_bpe_merges()`
+3. Wire tokenizer to use hacedle's `GGUFTokenizer` from `hacedle::x::provider::candle::tokenizer`
+
+---
+
+## GAP-003: Model Weights Not Loaded [HIGH]
+
+**Location:** `fem/hacedle/src/x/provider/candle/lmhead.rs:13`, `embed.rs`
+
+**Error:** LMHead and EmbedEngine created with empty weights.
+
+**Details:**
+```rust
+// lmhead.rs:13
+pub fn new(vocab_size: usize, embed_dim: usize) -> Self {
+    Self { weight: Vec::new(), vocab_size, embed_dim }  // EMPTY WEIGHTS!
+}
+
+// inference.rs:35-48
+pub fn infer_logits(&self, prompt: &str) -> Vec<f32> {
+    let tokens = self.tokenizer.encode(prompt);
+    let embedded = self.embed.embed_sequence(&tokens);  // Uses uninitialized embeddings
+    let hidden = self.transformer.forward(&embedded);   // Uses empty weights
+    let logits = self.lm_head.forward(&hidden);         // Returns zeros
+    logits
+}
+```
+
+**Impact:** All forward passes return zero/undefined values.
+
+**Fix Required:**
+1. Load weights from GGUF tensor data
+2. Wire `LMHead::load_weight()` in inference chain
+3. Load embeddings from GGUF `tok_embeddings` tensor
+
+---
+
+## GAP-004: KV Cache Not Wired [MEDIUM]
+
+**Location:** `brain/master/src/runtime/kv_cache.rs`
+
+**Error:** KvCache struct exists but not integrated into inference chain.
+
+**Details:**
+- `KvCache` is created but never passed to transformer layers
+- `Prefill` calls `infer()` without KV cache state
+- Each inference pass recomputes all attention
+
+**Impact:** 
+- O(n²) attention complexity instead of O(n)
+- Memory not reused across tokens
+
+**Fix Required:**
+```rust
+// In inference engine:
+pub struct BrainInferenceEngine {
+    inference_engine: HacedleInferenceEngine,
+    kv_cache: KvCache,  // Add KV cache
+}
+
+impl BrainInferenceEngine {
+    pub fn infer_with_kv(&mut self, request: InferenceRequest) -> Result<InferenceResponse, &'static str> {
+        // 1. Tokenize
+        let tokens = self.inference_engine.tokenizer.encode(&request.prompt);
+        
+        // 2. Feed through layers with KV cache
+        for layer in &mut self.inference_engine.transformer.layers {
+            layer.forward_with_kv_cache(&embedded, &mut self.kv_cache);
+        }
+        
+        // 3. Generate with cached keys/values
+        // ...
+    }
+}
+```
+
+---
+
+## GAP-005: Coge Orphan Files Structure [MEDIUM]
+
+**Location:** `brain/coge/`
+
+**Error:** Rust library files at root level with no `src/lib.rs`.
+
+**Current Structure:**
+```
+coge/
+├── Cargo.toml
+├── mod.rs        ← Root module (should be src/lib.rs)
+├── infer.rs      ← Orphan file
+├── lora.rs       ← Orphan file
+├── run.rs        ← Orphan file
+└── src/
+    └── cat_dispatcher.rs
+```
+
+**Impact:** 
+- `cargo build` fails for coge crate
+- Unclear module structure
+
+**Fix Required:**
+```bash
+# Move files to src/
+mv coge/mod.rs coge/src/lib.rs
+mv coge/infer.rs coge/src/infer.rs
+mv coge/lora.rs coge/src/lora.rs
+mv coge/run.rs coge/src/run.rs
+
+# Update Cargo.toml
+[lib]
+name = "hace_brain_coge"
+path = "src/lib.rs"
+```
+
+---
+
+## GAP-006: Build System - Missing Cross-Compile Tools [HIGH]
+
+**Location:** Build dependencies
+
+**Error:** `onig_sys` requires `x86_64-linux-gnu-gcc` which is not available on Windows.
+
+**Details:**
+```
+error: failed to run custom build command for `onig_sys v69.9.3`
+Caused by: ToolNotFound: failed to find tool "x86_64-linux-gnu-gcc"
+```
+
+**Impact:** Build fails on Windows systems.
+
+**Fix Required:**
+1. Add feature flag to disable `onig` dependency
+2. Or use `tokenizers` with `unstable` feature to avoid onig
+
+---
+
+## Verified Working Paths
+
+### ✅ W1: GGUF Header Reading (hacedle)
+- Magic: GGUF ✓
+- Version: 3 ✓
+- Tensor count: 290 ✓
+- Metadata KV count: 38 ✓
+
+### ✅ W2: ModelSpec Extraction
+- `ModelSpec::from_metadata()` parses correctly:
+  - architecture from `general.architecture` ✓
+  - context_length from `qwen2.context_length` ✓
+  - n_layer from `qwen2.block_count` ✓
+
+### ✅ W3: Tensor Index Parsing
+- `GgufTensorIndex::parse()` reads tensor names, shapes, offsets ✓
+
+---
+
+## Critical Patch List
+
+### CRITICAL (Must fix before testing)
+1. **GAP-001**: Fix SioOutcome type mismatch (struct vs enum)
+2. **GAP-002**: Implement real BPE tokenizer from GGUF vocab
+3. **GAP-003**: Load model weights from GGUF tensors
+4. **GAP-006**: Fix build on Windows (disable onig or use prebuilt)
+
+### HIGH (Can be done in parallel)
+1. **GAP-004**: Wire KV cache to inference chain
+2. **GAP-005**: Fix coge module structure
+
+---
+
+## Validation Commands
+
+```bash
+# Check SioOutcome mismatch
+grep -n "SioOutcome::Success" T:/hace/engine/hace/brain/master/src/provider/candle.rs
+grep -n "pub struct SioOutcome" T:/hace/engine/hace/brain/master/src/outcome.rs
+
+# Check tokenizer fallback
+grep -n "bytes().map" T:/hace/engine/hace/fem/hacedle/src/x/provider/candle/tokenizer.rs
+
+# Check empty weights
+grep -n "Vec::new()" T:/hace/engine/hace/fem/hacedle/src/x/provider/candle/lmhead.rs
+
+# Check coge structure
+ls -la T:/hace/engine/hace/brain/coge/
+```
+
+---
+
+Report by DEBUGGER - System Audition Complete
+2026-06-05T15:10:00+07:00

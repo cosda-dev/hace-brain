@@ -1,0 +1,111 @@
+# CSA Alpha-3 Error Detection Report
+# Generated: 2026-06-06T20:41:37+07:00
+
+metadata:
+  report_id: brain/reports/debugger-errors-20260606.yaml
+  authority: CSA/DEBUGGER
+  version: "1.0.0"
+  datetime: "2026-06-06T20:41:37+07:00"
+
+executive_summary:
+  total_errors: 6
+  critical: 4
+  high: 1
+  medium: 1
+  verified_working: 1
+
+gaps:
+  - id: ERROR-001
+    component: "Embedding Weights"
+    location: "fem/hacedle/src/x/provider/candle/embed.rs"
+    status: STUB
+    severity: CRITICAL
+    description: "EmbedEngine::new() creates empty embeddings Vec::new()"
+    impact: "embed_token() returns zero vectors"
+    fix_required: "Wire GGUF tensor loading to EmbedEngine::load_quantized()"
+
+  - id: ERROR-002
+    component: "LMHead Weights"
+    location: "fem/hacedle/src/x/provider/candle/lmhead.rs"
+    status: STUB
+    severity: CRITICAL
+    description: "LMHead::new() creates empty weight Vec::new()"
+    impact: "forward() produces all zeros"
+    fix_required: "Load output.weight tensor from GGUF and dequantize"
+
+  - id: ERROR-003
+    component: "Transformer Layer"
+    location: "fem/hacedle/src/x/provider/candle/layer.rs"
+    status: STUB
+    severity: CRITICAL
+    description: "forward() returns identity: hidden_states.to_vec()"
+    impact: "No actual computation, no attention, no FFN"
+    fix_required: "Implement real RMSNorm, attention, FFN with loaded weights"
+
+  - id: ERROR-004
+    component: "Model Identity"
+    location: "Multiple"
+    status: FAIL
+    severity: CRITICAL
+    description: "All models produce same tokens (Qwen/Phi/Llama)"
+    impact: "Inference chain is not model-specific"
+    root_cause: "Weights empty + transformer stub + tokenizer fallback"
+
+  - id: ERROR-005
+    component: "Tokenizer BPE"
+    location: "fem/hacedle/src/x/provider/candle/tokenizer.rs"
+    status: FALLBACK
+    severity: HIGH
+    description: "encode_bpe() falls back to ASCII bytes when vocab empty"
+    impact: "'hello' -> [104,101,108,108,111] instead of BPE tokens"
+
+  - id: ERROR-006
+    component: "SioOutcome Type"
+    location: "brain/master/src/outcome.rs"
+    status: FIXED
+    severity: N/A
+    description: "Already converted to enum with Success/Error variants"
+
+verification_status:
+  gguf_header: VERIFIED
+  tensor_index: VERIFIED
+  tensor_count: 290
+  embedding_weight_found: true
+  output_weight_found: true
+  layer0_found: true
+
+current_pipeline:
+  prompt: "hello world"
+  tokenizer_output: "[104, 101, 108, 108, 111] (ASCII fallback)"
+  embedding_output: "zeros (empty weights)"
+  transformer_output: "identity (stub)"
+  logits_output: "zeros"
+  first_token: "incorrect (all models same)"
+
+acceptance_gate:
+  gate_01_gguf_weights_loaded: false
+  gate_02_tokenizer_roundtrip: false
+  gate_03_embedding_non_zero: false
+  gate_04_logits_non_zero: false
+  gate_05_model_identity_different: false
+  gate_06_prompt_to_reply_working: false
+
+priority_sequence:
+  - step: 1
+    task: "Call load_model() in InferenceEngine before inference"
+    blocks: "All inference"
+  - step: 2
+    task: "Wire tensor bytes to EmbedEngine::load_quantized()"
+    blocks: "Embedding"
+  - step: 3
+    task: "Wire tensor bytes to LMHead::load_weight()"
+    blocks: "Logits"
+  - step: 4
+    task: "Implement real forward() in TransformerLayer"
+    blocks: "Forward pass"
+  - step: 5
+    task: "Load tokenizer vocab from GGUF metadata"
+    blocks: "Proper tokenization"
+  - step: 6
+    task: "Implement attention + FFN with loaded weights"
+    blocks: "Model identity differentiation"

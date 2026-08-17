@@ -1,0 +1,22 @@
+[package]
+name = "hace-brain-master"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Brain Master Runtime - Orchestrator for Multi-Soul, Multi-Provider"
+
+[[bin]]
+name = "prove_inference"
+path = "src/bin/prove_inference.rs"
+
+[dependencies]
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+tokenizers = "0.19"
+futures = "0.3"
+hace-brain-base = { path = "../base" }
+hace-fem-hacedle = { path = "../../fem/hacedle" }
+
+[features]
+default = ["std"]
+std = ["hace-fem-hacedle/std"]

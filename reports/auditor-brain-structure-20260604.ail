@@ -1,0 +1,142 @@
+---
+header:
+  id: AIL://brain.reports.auditor.structure.20260604
+  intent: DECLARE_AUDIT_REPORT
+  status: ACTIVE
+  locale: vi-85
+  version: "1.0"
+  authority: Auditor
+  datetime: "2026-06-04T08:48:18+07:00"
+---
+
+# Brain Structure Audit Report
+
+## Checkin Locations
+
+```yaml
+checkin_locations:
+  - engine/hace/brain/base
+  - engine/hace/brain/runtime
+  - engine/hace/brain/master
+  - engine/hace/brain/hooks
+  - engine/hace/brain/src/op
+  - engine/hace/brain/src/block
+  - engine/hace/brain/src/registry
+```
+
+## Build Status
+
+| Crate | Status | Build Notes |
+|-------|--------|-------------|
+| `hace-brain-base` | ✅ COMPILABLE | `no_std` compliant, has AlgoParticle impl |
+| `hace-brain-runtime` | ✅ COMPILABLE | ZeusRouter, ZeusRuntime with stub bridges |
+| `hace-brain-master` | ✅ COMPILABLE | Master runtime stub, no real dispatch |
+| `hace-brain-hooks` | ✅ COMPILABLE | Empty shell |
+
+## Joints Analysis
+
+### brain/base (Reasoning Kernel Interface)
+- ✅ `BrainKernel` trait - universal reasoning interface
+- ✅ `BrainRuntime` trait - CE contract
+- ✅ `AlgoParticle` - deterministic CE implementation  
+- ✅ `ReasonCtx`/`ReasonResult`/`BrainError` - core types
+- ✅ `BrainProfile` - expert configuration
+- ✅ `classify_complexity()` - routing logic
+- ✅ Tests: 7 passing (algo rule match, complexity routing)
+
+### brain/runtime (Zeus CE Coordinator)  
+- ⚠️ `ZeusRouter` - chọn CE dựa complexity, fallback xuống Algo
+- ❌ `HacedleBridge` - **stub no-op** (không gọi HacedleBrain)
+- ❌ `HacetralBridge` - **stub no-op** (không gọi HacetralEngine)
+- ✅ `RouteResult` - wrapper for CE output
+- ✅ `ZeusRuntime` - router + optional profile
+
+### brain/master (Orchestrator)
+- ❌ `BrainMasterRuntime.execute()` - trả `SioOutcome::default()` luôn
+- ❌ `RuntimeDispatcher.dispatch()` - **stub** không dispatch provider
+- ❌ `execute_brain()` - trả chuỗi "TODO"
+- ⚠️ `ProviderRegistry` - BTreeMap nhưng không có provider thật registered
+- ⚠️ `BrainProvider` trait - declare mà chưa có impl
+
+### brain/src/op (Operators)
+- ✅ `rmsnorm.rs` - RMSNorm f32 implementation
+- ✅ `rope.rs` - RoPE pairwise implementation (Qwen2.5 theta=1000000)
+- ✅ `matmul.rs` - naive GEMM (O(n³))
+- ✅ `silu.rs` - SiLU/Swish activation
+
+### brain/src/block
+- ⚠️ `brain_block.rs` - BrainBlock struct chỉ khai báo weight, `forward()` trả placeholder
+- ⚠️ `attention.rs` - QKV projection stub, softmax, GQA logic
+- ❌ Missing: KV cache, FFN integration
+
+### brain/src/registry
+- ⚠️ `operator_registry.rs` - HashMap stub, chưa đăng ký operator nào
+
+---
+
+## GAPs (Critical Breach Points)
+
+| Location | Breach Point | Severity | Impact |
+|----------|--------------|----------|--------|
+| `runtime/bridges/hacedle.rs` | invoke() returns stub output | HIGH | Không inference được |
+| `runtime/bridges/hacetral.rs` | invoke() returns stub output | HIGH | Không compile DSL được |
+| `master/dispatcher.rs` | dispatch() stub, no provider call | HIGH | Master không hoạt động |
+| `master/execute/mod.rs` | execute_brain() returns "TODO" | HIGH | Execution broken |
+| `src/block/brain_block.rs` | forward() returns placeholder | MEDIUM | Model forward broken |
+| `fem/hacedle/src/lib.rs` | No BrainKernel implementation | HIGH | CE dispatch gap |
+| `fem/hacetral/src/runtime.rs` | No BrainKernel impl | MEDIUM | CE dispatch gap |
+| `src/registry/operator_registry.rs` | Operators HashMap empty | MEDIUM | No operator registration |
+
+---
+
+## Quality Gate Check
+
+| Gate | Status | Notes |
+|------|--------|-------|
+| `no_std_core` | ⚠️ PARTIAL | brain/base ok, brain/runtime ok, master cần alloc |
+| `no_alloc_core` | ❌ FAIL | brain/master, brain/src dùng Vec<String> |
+| `deterministic_output` | ✅ OK | AlgoParticle deterministic |
+| `ze_verify_before_finalized` | ⚠️ PENDING | Chưa kết nối Hacedle |
+
+---
+
+## Suggested Fixes for Next Task
+
+```yaml
+fixes:
+  - location: "brain/runtime/bridges/hacedle.rs"
+    action: "AR_REFINE_CODE"
+    desc: "Wire invoke() to Hacedle InferenceEngine"
+    
+  - location: "brain/runtime/bridges/hacetral.rs"
+    action: "AR_REFINE_CODE"
+    desc: "Wire invoke() to HacetralEngine::process()"
+    
+  - location: "brain/src/block/brain_block.rs"
+    action: "AR_REFINE_CODE"
+    desc: "Implement forward() với attention + FFN"
+    
+  - location: "fem/hacedle/src/lib.rs"
+    action: "AR_REFINE_CODE"
+    desc: "Add BrainKernel impl for HacedleBrain"
+    
+  - location: "brain/master/provider/candle/mod.rs"
+    action: "AR_REFINE_CODE"
+    desc: "Implement BrainProvider cho CandleProvider"
+    
+  - location: "brain/src/registry/operator_registry.rs"
+    action: "AR_REFINE_CODE"
+    desc: "Register rmsnorm, rope, matmul, silu operators"
+```
+
+---
+
+## Summary
+
+**Artifact Completion: 60%**
+- Core traits (BrainKernel/BrainRuntime) đầy đủ
+- Operators (rmsnorm/rope/matmul/silu) implement cơ bản
+- Bridge layer (**CRITICAL GAP**) chưa kết nối tới CE backend
+- Master runtime (**CRITICAL GAP**) chưa dispatch thực
+
+**Next Priority:** Implement `BrainKernel` cho `hacedle` + wire bridges

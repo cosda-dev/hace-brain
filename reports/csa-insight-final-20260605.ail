@@ -1,0 +1,116 @@
+---
+header:
+  id: AIL://brain.reports.csa.insight_final.20260605
+  intent: CSA_INSIGHT_FINAL
+  status: ACTIVE
+  authority: CSA
+  locale: en
+  version: "1.0.0"
+  datetime: "2026-06-05T14:35:00+07:00"
+---
+
+# CSA Insight Final Report
+
+## Canon Compliance Check
+
+### ✅ Canon Respected
+- **No duplication**: `brain/master/provider/gguf/loader.rs` delegates to hacedle
+- **FAN Before Code**: Hooks registered before implementation
+- **Hookpoint Before Inject**: Using established contracts
+
+### ⚠️ Gaps Identified
+
+| Gap | Location | Status | Priority |
+|-----|----------|--------|----------|
+| SioOutcome Type Mismatch | candle.rs:93 | COMPILE_ERROR | CRITICAL |
+| Brain Logits Stub | logits.rs:13-24 | STUB | HIGH |
+| Weight Loading | inference structs | NOT WIRED | HIGH |
+| KV Cache Integration | kv_cache.rs, prefill.rs | TODO | MEDIUM |
+
+---
+
+## Key Findings
+
+### 1. Loader Path - VERIFIED OK
+```
+hacedle::x::loader::gguf::{GgufLoader, ModelSpec}
+hacedle::x::loader::gguf::metadata::GgufMetadata
+```
+- `GgufLoader::load_std()` exists at line 44 of loader.rs
+- Correctly called from brain/master/loader.rs
+
+## Inference Chain Status
+```
+tokenizer:    PARTIAL (encode/decode implemented, vocab empty)
+embed:        API_OK (load_from_gguf method exists)
+transformer:  PLACEHOLDER (forward passes empty weights)
+lmhead:       API_OK (forward/load_weight methods exist)
+sampler:      IN hacedle::lmhead::LogitsProcessor (sampler.rs is empty shell)
+logits_proc:  OK (process method in lmhead.rs)
+brain_logits: STUB (hardcoded 9707 token)
+candle:       COMPILE_ERROR (SioOutcome::Success used but SioOutcome is a struct)
+```
+
+## Critical Blockers
+- **GAP-006**: `candle.rs:93` uses `SioOutcome::Success` but `outcome.rs:6` defines `SioOutcome` as struct
+- **GAP-002**: `brain/master/runtime/logits.rs` returns hardcoded values (9707 token)
+
+---
+
+### 3. GGUF File Validation
+- Path: `D:/host/llama-models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf`
+- Magic: GGUF ✓
+- Version: 3 ✓
+- Tensors: 290 ✓
+- Metadata: 38 KV pairs ✓
+
+---
+
+## Recommendations
+
+### Immediate (Blockers - Cannot Compile)
+1. **Fix SioOutcome type mismatch** in `candle.rs:93` - use struct constructor instead of enum syntax
+
+### High Priority (Blocks Runtime)
+2. **Wire real logits** in `brain/master/logits.rs` - delegate to hacedle::InferenceEngine
+3. **Load tensor weights** into LMHead/EmbedEngine/TransformerLayer from GGUF tensor data
+
+### Architecture Alignment
+The inference flow should be:
+```
+Prompt -> Tokenizer.encode() -> EmbedEngine.embed_sequence()
+      -> Transformer24.forward() -> LMHead.forward() -> LogitsProcessor.process()
+      -> Argmax sampling -> Decoder.decode()
+```
+
+Currently:
+```
+Prompt -> Tokenizer.encode() -> EmbedEngine (empty) -> Transformer (placeholder) -> LMHead (empty) -> Argmax
+```
+
+---
+
+## G1 Certification Readiness
+
+| Requirement | Status |
+|-------------|--------|
+| Real GGUF metadata output | ✅ READY |
+| Working tokenizer encode/decode | ⚠️ STUB vocab |
+| Functional inference chain | ⚠️ STUB weights |
+| SioOutcome type compatible | ❌ COMPILE ERROR |
+
+**Verdict**: NOT READY - weights not loaded, sampler incomplete, candle.rs has type mismatch
+
+---
+
+## Validation Scripts Created
+
+```bash
+scripts/validate_loader_delegation.py  # Checks delegation pattern
+scripts/validate_sampler_integration.py  # Checks logits processor
+scripts/validate_weight_loading.py  # Checks weight stubs
+scripts/validate_inference_chain.py  # Full chain check
+```
+
+Report by CSA - Chief Solution Architect
+2026-06-05T14:35:00+07:00

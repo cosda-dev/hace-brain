@@ -1,0 +1,48 @@
+---
+header:
+  id: CANON://brain.master.v1
+  intent: ORCHESTRATE_MULTISPIRIT
+  status: ACTIVE
+  locale: vi-85
+  version: "1.0.0"
+  authority: CRD
+---
+
+# Brain Master Runtime
+
+## Position
+position: Orchestrator layer
+above: Hacedle Runtime
+below: Aura Soul
+
+## Responsibilities
+- Receive SIO
+- Resolve Soul
+- Build Session
+- Dispatch Runtime
+- Collect Outcome
+- Return SioOutcome
+
+## Structure
+structure:
+  runtime.rs - BrainMasterRuntime orchestrator
+  session.rs - BrainSession with soul/profile context
+  dispatcher.rs - RuntimeDispatcher to providers
+  outcome.rs - SioOutcome result format
+  registry/ - Soul/Provider/Profile registries
+  context/ - RuntimeSio builder
+  execute/ - Execution pipeline
+
+## Relationship
+flow:
+  RuntimeSio
+    ↓
+  BrainMasterRuntime
+    ↓
+  Hacetral Orch
+    ↓
+  Hacedle
+    ↓
+  Provider (Candle/Llama/ONNX/MLX/vLLM)
+
+---

@@ -1,0 +1,42 @@
+# Milestone A3-R4: Replay Golden Certification
+
+```yaml
+header:
+  id: MILESTONE_A3_R4
+  intent: TRACK
+  status: PENDING
+  priority: P1
+```
+
+## Requirements
+```yaml
+golden_tensors:
+  blocks:
+    - block0
+    - block1
+    - block2
+    - ... (24 total)
+source: llama.cpp
+format: binary
+```
+
+## Tasks
+- [ ] Export block outputs from llama.cpp
+- [ ] Import to brain/tests/golden/
+- [ ] Implement ReplayExecutor diff
+- [ ] Run compare: hacedle vs golden
+- [ ] Document divergence per layer
+
+## Commands
+```bash
+hace brain replay --golden block0.bin
+hace brain replay certify
+hace brain replay diff
+```
+
+## Success Criteria
+```yaml
+divergence:
+  max_abs_error: < 1e-5
+  all_blocks: pass
+```

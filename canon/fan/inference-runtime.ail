@@ -1,0 +1,169 @@
+---
+header:
+  id: AIL://brain.canon.fan.inference-runtime.v2
+  intent: DECLARE_FAN
+  status: ACTIVE
+  version: "2.0.0"
+  authority: CSA
+  updated: "2026-06-06"
+  prev_version: "1.0.0 (2026-06-05T09:34) â€” predated candle partial-status audit"
+---
+
+# FAN: Inference Runtime â€” Candle CE Chain
+
+## Chain overview
+
+```yaml
+chain: "embed -> transformer_layer[0..n] -> lmhead -> logits"
+owner: "fem/hacedle/src/x/provider/candle/"
+status_summary:
+  embed.rs:     "PARTIAL (1.42KB) â€” likely functional but unverified end-to-end"
+  layer.rs:     "PARTIAL (2.41KB) â€” attention+FFN structure, wire to KvCache unverified"
+  lmhead.rs:    "PARTIAL (3.12KB) â€” lm head projection, THE logits source"
+  inference.rs: "PARTIAL (2.44KB) â€” CandleInferenceEngine::forward(), not wired to master"
+
+kernel_bridge:
+  file:    "brain/master/src/kernel/hacedle.rs (1.74KB)"
+  status:  SKELETON
+  finding: "HacedleKernel trait â€” NOT connected to hacedle candle chain"
+  unchanged_since: "2026-06-04T13:35"
+```
+
+---
+
+## EFC_BRAIN_EMBED_001
+
+```yaml
+efc_id:    "EFC_BRAIN_EMBED_001"
+rfn:       "RFN://brain.candle.embed"
+file:      "fem/hacedle/src/x/provider/candle/embed.rs (1.42KB)"
+status:    PARTIAL
+
+input:     "token_id: u32 + weight_slice: &[f32]  (from TensorIndex lookup)"
+output:    "Vec<f32>[hidden_size]  e.g. [896] for Qwen2.5-0.5B"
+process:   "weight_slice[token_id * hidden_size .. (token_id+1) * hidden_size].to_vec()"
+
+gap: |
+  EmbeddingLayer::forward() likely correct structurally.
+  Gap: HacedleKernel.embed() in kernel/hacedle.rs must call this
+  after resolving 'token_embd.weight' tensor via TensorIndex.
+  
+  Current: kernel/hacedle.rs = skeleton, embed() not delegating.
+```
+
+---
+
+## EFC_BRAIN_LAYER_001
+
+```yaml
+efc_id:    "EFC_BRAIN_LAYER_001"
+rfn:       "RFN://brain.candle.transformer_layer"
+file:      "fem/hacedle/src/x/provider/candle/layer.rs (2.41KB)"
+status:    PARTIAL
+
+input:
+  hidden:  "Vec<f32>[hidden_size]"
+  pos:     "usize â€” current position (for RoPE)"
+  kv:      "&mut KvCache â€” layer writes k/v at pos"
+  weights: "LayerWeights { q_proj, k_proj, v_proj, o_proj, gate, up, down, rms_* }"
+
+output:    "Vec<f32>[hidden_size]"
+
+sub_ops:
+  attn_norm: "hacedle::ops::rmsnorm (canonical in hacedle/src/ops/rmsnorm.rs)"
+  rope:      "hacedle::ops::rope     (canonical in hacedle/src/ops/rope.rs)"
+  attention: "hacedle::ops::attention (canonical â€” GAP-02 let mut fix needed)"
+  ffn_norm:  "hacedle::ops::rmsnorm"
+  silu_gate: "hacedle::ops::silu"
+  matmul:    "hacedle::ops/matmul.rs (must exist in hacedle/ops â€” verify)"
+
+gap: |
+  layer.rs imports hacedle::ops::* â€” verify all ops are exported from lib.rs.
+  attention.rs GAP-02 (let mut) must be fixed for layer to produce correct output.
+  KvCache write: layer.rs must call kv.prefill(pos, k_slice, v_slice, layer_idx).
+```
+
+---
+
+## EFC_BRAIN_LMHEAD_001
+
+```yaml
+efc_id:    "EFC_BRAIN_LMHEAD_001"
+rfn:       "RFN://brain.candle.lmhead"
+file:      "fem/hacedle/src/x/provider/candle/lmhead.rs (3.12KB)"
+status:    PARTIAL
+priority:  CRITICAL  # THIS is the logits source for G7
+
+input:     "hidden: Vec<f32>[hidden_size]  (last transformer layer output)"
+output:    "logits: Vec<f32>[vocab_size]   e.g. [151936] for Qwen2.5"
+
+process: |
+  1. final_rmsnorm(hidden, rms_weight)
+  2. matmul(hidden, lm_head_weight[vocab_size x hidden])
+  -> logits[vocab_size]
+
+weight_source:
+  norm:    "GGUF tensor: 'output_norm.weight' (shape [hidden_size])"
+  lmhead:  "GGUF tensor: 'output.weight' (shape [vocab_size, hidden_size])"
+           # Qwen2.5 may share 'token_embd.weight' â€” check tied_embeddings flag
+
+gap: |
+  LmHead::forward() likely structurally correct.
+  Gap: HacedleKernel.forward() in kernel/hacedle.rs must:
+    1. Run all layers (call layer.forward() in loop 0..block_count)
+    2. Call lmhead.forward() on final hidden state
+    3. Return logits Vec<f32>
+  Currently: kernel/hacedle.rs = skeleton, forward() not calling any of this.
+```
+
+---
+
+## EFC_BRAIN_INFERENCE_ENGINE_001
+
+```yaml
+efc_id:    "EFC_BRAIN_INFERENCE_ENGINE_001"
+rfn:       "RFN://brain.candle.inference_engine"
+file:      "fem/hacedle/src/x/provider/candle/inference.rs (2.44KB)"
+status:    PARTIAL
+
+role: |
+  CandleInferenceEngine â€” orchestrates full forward pass:
+  embed -> layer[0..n] -> lmhead -> logits
+
+gap: |
+  Existence confirmed (2.44KB, modified 2026-06-04).
+  BUT: brain/master/src/kernel/hacedle.rs (1.74KB, UNCHANGED) does NOT
+  call CandleInferenceEngine. The bridge is missing.
+
+kernel_bridge_fix_required: |
+  brain/master/src/kernel/hacedle.rs::HacedleKernel::forward() must:
+    use hace_fem_hacedle::x::provider::candle::inference::CandleInferenceEngine;
+    CandleInferenceEngine::forward(token_ids, &model, &mut kv_cache)
+```
+
+---
+
+## Wiring diagram (target)
+
+```text
+InferenceEngine::infer(req)                 [brain/master/src/inference/engine.rs]
+  |
+  +-- GgufLoader::load(model_path)          [delegates to hacedle loader_std]
+  |     -> LoadedModel
+  |
+  +-- BrainTokenizer::encode(text)          [brain/master/src/tokenizer/]
+  |     -> token_ids: Vec<u32>
+  |
+  +-- KvCache::new(model_spec, max_seq)     [brain/master/src/runtime/kv_cache.rs]
+  |     -> kv: KvCache
+  |
+  +-- HacedleKernel::forward(              [brain/master/src/kernel/hacedle.rs]
+  |       token_ids, &model, &mut kv)       |
+  |     |                                   v
+  |     +-- CandleInferenceEngine::forward  [hacedle/x/provider/candle/inference.rs]
+  |           embed -> layer[0..n] -> lmhead
+  |     -> logits: Vec<f32>[vocab_size]
+  |
+  +-- Logits::top_k(logits, k=5)           [brain/master/src/runtime/logits.rs]
+        -> Vec<(token_id, score)>
+```

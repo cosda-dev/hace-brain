@@ -1,0 +1,14 @@
+[package]
+name = "hace-brain-cli"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+rr-cli = { path = "../../rr/cli" }
+hace-brain-runtime = { path = "../runtime" }
+hace-fem-hacedle = { path = "../../fem/hacedle" }
+
+[lib]
+name = "hace_brain_cli"
+path = "src/lib.rs"

@@ -1,0 +1,31 @@
+# Milestone A3-R3: Q4K Certification
+
+```yaml
+header:
+  id: MILESTONE_A3_R3
+  intent: TRACK
+  status: PENDING
+  priority: P1
+```
+
+## Requirements
+```yaml
+q4k_verification:
+  reference: llama.cpp
+  max_abs_error: < 1e-5
+```
+
+## Tasks
+- [ ] Generate golden tensors from llama.cpp
+- [ ] Run hacedle dequant on same inputs
+- [ ] Compare outputs with L2 norm
+- [ ] Document divergence points
+- [ ] Fix dequant inaccuracies
+
+## Q4K Format
+```
+Block size: 28 bytes
+  - 1 scale (f16)
+  - 16 ql values (4 bits each)
+  - 28 qh values (4 bits each)
+```

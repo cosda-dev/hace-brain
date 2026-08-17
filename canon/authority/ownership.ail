@@ -1,0 +1,94 @@
+---
+header:
+  id: AUTHORITY://brain.ownership.v1
+  intent: DECLARE_OWNERSHIP_RULES
+  status: CANONICAL
+  authority: CSA
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# Ownership Rules
+
+```yaml
+ownership:
+
+  hacedle:
+    owns:
+      path: fem/hacedle/src/x/loader/gguf/*
+      scope: GGUF loading, parsing, tensor indexing
+    owns:
+      path: fem/hacedle/src/x/provider/candle/*
+      scope: Candle inference, tokenizer, layers
+    owns:
+      path: fem/hacedle/src/x/loader/kvm/*
+      scope: KV cache (when implemented)
+
+  brain/master:
+    owns:
+      path: brain/master/src/provider/gguf/loader.rs
+      scope: DELEGATION_ONLY
+    owns:
+      path: brain/master/src/tokenizer/
+      scope: Tokenizer integration
+    owns:
+      path: brain/master/src/runtime/
+      scope: Runtime orchestration
+    steward_of:
+      - brain.gguf.loader
+
+delegation_rules:
+
+  - when: brain/master wants GGUF loader
+    check: FAN Registry
+    if_exists:
+      owner: hacedle
+      action: DELEGATE
+    not_exists:
+      action: CREATE_FAN_FIRST
+
+  - when: brain/master wants tokenizer
+    check: FAN Registry
+    if_exists:
+      owner: hacedle
+      action: REUSE
+    if_crate_available:
+      crate: tokenizers
+      action: INTEGRATE
+
+consumers:
+  brain/cli:
+    allowed_to_consume:
+      - brain.gguf.loader
+      - brain.tokenizer
+      - brain.inference-runtime
+
+  brain/runtime:
+    allowed_to_consume:
+      - brain.gguf.loader
+      - brain.tokenizer
+      - brain.kv-cache
+      - brain.inference-runtime
+
+  brain/session:
+    allowed_to_consume:
+      - brain.kv-cache
+      - brain.inference-runtime
+
+violation_responses:
+
+  - violation: duplicate_impl
+    check: FAN Registry existence
+    response: >
+      DELETE brain/master version,
+      RE-EXPORT from hacedle,
+      LOG violation with Causality hash
+
+  - violation: stub_instead_of_real
+    check: metadata not from file
+    response: >
+      FAIL certification,
+      REJECT build,
+      REQUIRE real implementation
+```

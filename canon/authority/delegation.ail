@@ -1,0 +1,81 @@
+---
+header:
+  id: AUTHORITY://brain.delegation.v1
+  intent: DECLARE_DELEGATION_RULES
+  status: CANONICAL
+  authority: CSA
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# Delegation Rules
+
+```yaml
+delegation:
+
+  - feature: GGUF_LOADER
+    owner: hacedle
+    consumer: brain/master
+    method:
+      reexport: true
+      delegate: true
+    prohibited_actions:
+      - reimplement
+      - clone
+
+  - feature: TOKENIZER
+    owner: hacedle OR external
+    consumer: brain/master
+    method:
+      integrate: true
+      wrap: true
+    prohibited_actions:
+      - bpe_from_scratch
+      - vocab_reimplementation
+
+  - feature: INFERENCE
+    owner: hacedle
+    consumer: brain/master
+    method:
+      reuse: true
+      bridge: true
+    prohibited_actions:
+      - rewrite_layers
+      - rewrite_lmhead
+
+delegation_flow:
+
+  consumer_wants_feature:
+    step_1: Check FAN Registry
+    step_2: IF owner exists: DELEGATE
+    step_3: IF no owner: Create FAN first
+    step_4: Wire to existing artifact
+    step_5: CSA audit validation
+
+delegation_template:
+
+  rust_code: |
+    // brain/master delegation pattern
+    pub use hacedle::x::loader::gguf::{GgufLoader, GgufHeader, TensorIndex};
+    
+    pub fn verify(path: &str) -> Result<ModelVerification> {
+        GgufLoader::load_path(path)?
+            .verify()
+    }
+
+valid_delegation_patterns:
+
+  - pattern: reexport
+    code: "pub use hacedle::x::loader::gguf::GgufLoader;"
+  - pattern: wrapper
+    code: |
+      pub fn verify(path: &str) -> Result<_> {
+        hacedle::GgufLoader::load_path(path)
+      }
+  - pattern: trait_bridge
+    code: |
+      impl BrainKernel for HacedleBridge {
+        fn reason(&self, ctx) -> hacedle::Kernel::infer(ctx)
+      }
+```

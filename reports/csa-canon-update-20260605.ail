@@ -1,0 +1,91 @@
+---
+header:
+  id: AIL://brain.reports.csa.canon-update.20260605T093000Z
+  intent: CSA_CANON_UPDATE_REPORT
+  status: COMPLETE
+  authority: CSA
+  locale: vi-85
+  version: "1.0.0"
+  datetime: "2026-06-05T09:30:00+07:00"
+---
+
+# CSA Canon Update Report - Alpha-3
+
+## Completed Canon Additions
+
+### Hookpoints (Authority Boundaries)
+- `brain/canon/hookpoints/gguf-loader.ail` - GGUF loader authority boundary
+- `brain/canon/hookpoints/tokenizer.ail` - Tokenizer hookpoint
+- `brain/canon/hookpoints/inference.ail` - Inference engine hookpoint
+
+### ASI (Assembly System Integration)
+- `brain/canon/asi/gguf-loader.ail` - GGUF loader integration path
+- `brain/canon/asi/tokenizer.ail` - Tokenizer integration path
+- `brain/canon/asi/candle-runtime.ail` - Inference runtime integration
+
+### FAN (Feature Identity)
+- `brain/canon/fan/gguf-verify.ail` - GGUF verify feature identity
+- `brain/canon/fan/first-token.ail` - First token feature
+- `brain/canon/fan/inference-runtime.ail` - Inference runtime feature
+- `brain/canon/fan/fan-table.ail` - FAN registry table
+
+### Authority
+- `brain/canon/authority/ownership.ail` - Ownership rules
+- `brain/canon/authority/delegation.ail` - Delegation patterns
+
+### Audits
+- `brain/canon/audits/reuse-rules.ail` - Reuse audit rules
+- `brain/canon/audits/authority-boundary.ail` - Authority audit rules
+
+## Code Changes
+
+### brain/master/src/provider/gguf/loader.rs
+- UPDATED: Now delegates to hacedle::x::loader::gguf::GgufLoader
+- REMOVED: Hardcoded values (violates RULE_04)
+- Added: Re-exports from hacedle per mandatory reuse
+
+### brain/master/src/provider/gguf/mod.rs
+- UPDATED: Added ModelVerification re-export
+- Added: Ownership reference comments
+
+## CSA Audit Scripts (Independent Validation)
+- `brain/audit/scripts/gguf_verify.py` - GGUF file validation
+- `brain/audit/scripts/tokenizer_roundtrip.py` - Tokenizer validation
+- `brain/audit/scripts/first_token.py` - First token validation
+
+## Assembly Graph Status
+
+```yaml
+brain.prompt:
+  status: BLOCKED
+  blockers:
+    - G5 tokenizer (REQUIRED before inference)
+  path:
+    - tokenizer.encode()
+    - gguf_loader.load()
+    - kv_cache.prefill()
+    - inference.forward()
+    - sampler.argmax()
+```
+
+## Next Directives for CTO
+
+1. **T1** - Wire brain/master to hacedle::GgufLoader (done, pending test)
+2. **T2** - Create brain/master/src/tokenizer/ using tokenizers crate
+3. **T3** - Implement KV cache in fem/hacedle or brain/runtime
+4. **T4** - Wire inference chain: embed -> layer -> lmhead
+5. **T5** - Implement greedy sampler for first token
+
+## Authority Matrix
+
+```yaml
+fem/hacedle: OWNER of gguf-loader, tokenizer, inference
+brain/master: STEWARD, DELEGATES to hacedle
+CSA: OWNER of audit/scripts, validation
+CTO: OWNER of wire/integration code
+```
+
+## CSA Verdict
+
+Canon layer P0-P4 established. FAN Registry active. Assembly path defined.
+CTO may proceed with implementation using mandatory reuse pattern.

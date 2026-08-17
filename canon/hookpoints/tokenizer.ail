@@ -1,0 +1,63 @@
+---
+header:
+  id: AIL://brain.canon.hookpoints.tokenizer.v1
+  intent: DECLARE_HOOKPOINTS
+  status: ACTIVE
+  version: "1.0.0"
+  authority: CSA
+  updated: "2026-06-05"
+---
+
+# Hookpoints: Tokenizer
+
+```yaml
+module: "brain/master/src/tokenizer/"
+registry_crate: "brain/hooks/src/lib.rs"
+
+hook_ids:
+  HOK_TOK_BEFORE_LOAD:
+    id:      "hok://brain/tok/before_load"
+    trigger: "Before GgufTokenizer::from_gguf(model)"
+    ctx:     "{ model_path: &str, vocab_size_hint: usize }"
+    e4:      "pass-through"
+    e5:      "license check â€” verify model authorized for this actor"
+
+  HOK_TOK_AFTER_LOAD:
+    id:      "hok://brain/tok/after_load"
+    trigger: "After tokenizer loaded, before first encode()"
+    ctx:     "{ vocab_size: usize, model_type: &str, bos_id: Option<u32> }"
+    e4:      "pass-through"
+    e5:      "telemetry â€” record model fingerprint"
+
+  HOK_TOK_BEFORE_ENCODE:
+    id:      "hok://brain/tok/before_encode"
+    trigger: "Before encode(text)"
+    ctx:     "{ text: &str, soul_id: Option<&str> }"
+    e4:      "pass-through"
+    e5:      "content filter â€” check text against RC policy before tokenizing"
+
+  HOK_TOK_AFTER_ENCODE:
+    id:      "hok://brain/tok/after_encode"
+    trigger: "After encode(), before feeding to prefill"
+    ctx:     "{ token_count: usize, truncated: bool }"
+    e4:      "pass-through"
+    e5:      "evidence pack â€” record token_count per session"
+
+  HOK_TOK_BEFORE_DECODE:
+    id:      "hok://brain/tok/before_decode"
+    trigger: "Before decode(ids)"
+    ctx:     "{ ids: &[u32] }"
+    e4:      "pass-through"
+    e5:      "pass-through (decode is low-risk)"
+
+  HOK_TOK_AFTER_DECODE:
+    id:      "hok://brain/tok/after_decode"
+    trigger: "After decode() â€” text is ready for output"
+    ctx:     "{ text: &str, token_count: usize }"
+    e4:      "pass-through"
+    e5:      "output audit â€” hallucination filter before Surface"
+
+registration: |
+  BrainHookRegistry::e4_defaults() auto-registers all 6 tokenizer hooks
+  as PassThroughHook. Wire e5 governance by replacing via registry.register().
+```

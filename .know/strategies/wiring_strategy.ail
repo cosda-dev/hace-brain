@@ -1,0 +1,40 @@
+# Wiring Strategy - Reuse vs Rebuild
+
+```yaml
+header:
+  id: STRATEGY://brain.wiring
+  intent: PRINCIPLE
+```
+
+## CAEM/FES Principle
+
+```text
+ONE PARSER
+MULTIPLE CONSUMERS
+```
+
+## Reuse First
+
+| Component | Source | Action |
+|-----------|--------|--------|
+| GGUF Header Parse | hacedle/x/loader/gguf/header.rs | ✅ REUSE |
+| GGUF Tensor Index | hacedle/x/loader/gguf/tensor_index.rs | ✅ REUSE |
+| GGUF Mmap | hacedle/x/loader/gguf/mmap.rs | ✅ REUSE |
+| Candle Inference | hacedle/x/provider/candle/inference.rs | ✅ REUSE |
+| Tokenizer | tokenizers crate | ✅ REUSE |
+
+## No Rebuild
+
+DO NOT create:
+- brain/master/src/gguf_header.rs (exists in hacedle)
+- brain/master/src/tensor_index.rs (exists in hacedle)
+- brain/master/src/candle_inference.rs (exists in hacedle)
+
+## Wire Pattern
+
+```rust
+// brain/master/wires_to_hacedle.rs
+use hacedle::x::loader::gguf::GgufLoader;
+use hacedle::x::provider::candle::InferenceEngine;
+use tokenizers::Tokenizer;
+```

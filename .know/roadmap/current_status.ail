@@ -1,0 +1,38 @@
+# Current Status - Alpha-3 GGUF Runtime
+
+```yaml
+header:
+  id: ROADMAP://brain.current-status
+  intent: STATUS_REPORT
+```
+
+## Completed Tasks
+
+| Priority | Task | Status |
+|----------|------|--------|
+| P0 | Stop building new FEMs | ✅ DONE |
+| P1 | GGUF Loader bridge | ✅ SKELETON |
+| P2 | Tokenizer bridge | ✅ SKELETON |
+| P3 | KV Cache struct | ✅ SKELETON |
+| P4 | Candle bridge | ✅ SKELETON |
+| P5 | Logits struct | ✅ SKELETON |
+| P6 | Replay components | ✅ SKELETON |
+
+## Waiting to Wire
+
+```text
+brain/master/provider/gguf/loader.rs
+  → hacedle::x::loader::gguf::GgufLoader::load_path()
+    
+brain/master/tokenizer/mod.rs
+  → tokenizers::Tokenizer
+  
+brain/master/inference/engine.rs
+  → hacedle::x::provider::candle::InferenceEngine
+```
+
+## Next Actions
+
+1. Enable hacedle gguf_loader feature
+2. Wire tokenizers crate
+3. Build binary for testing

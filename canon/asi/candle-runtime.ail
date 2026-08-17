@@ -1,0 +1,173 @@
+---
+header:
+  id: AIL://brain.canon.asi.candle-runtime.v2
+  intent: DECLARE_ASI
+  status: ACTIVE
+  version: "2.0.0"
+  authority: CSA
+  updated: "2026-06-06"
+  prev_version: "1.0.0 (2026-06-05T09:33) â€” kernel bridge gap + HacedleBrain missing undocumented"
+---
+
+# ASI: Candle Runtime (CE.Hacedle)
+
+## Critical gap
+
+```yaml
+gap_summary:
+  fem_hacedle_brain_dir:
+    path:   "fem/hacedle/src/brain/"
+    status: EMPTY
+    impact: "HacedleBrain struct does not exist â€” CE.Hacedle cannot be instantiated"
+    gap_id: GAP-T5
+
+  kernel_bridge:
+    path:      "brain/master/src/kernel/hacedle.rs (1.74KB)"
+    status:    SKELETON
+    unchanged: "2026-06-04T13:35 â€” not modified since creation"
+    impact:    "HacedleKernel does not call CandleInferenceEngine"
+
+  candle_inference:
+    path:   "fem/hacedle/src/x/provider/candle/inference.rs (2.44KB)"
+    status: PARTIAL
+    impact: "Exists but unreachable from brain/master layer"
+```
+
+---
+
+## Ownership model
+
+```yaml
+ownership:
+  brain_master_owns:
+    - "HacedleKernel trait definition  (kernel/hacedle.rs)"
+    - "CE injection into ZeusRouter"
+    - "LoadedModel lifecycle (open/close)"
+    - "KvCache lifecycle (alloc/reset)"
+
+  hacedle_owns:
+    - "ALL tensor ops (rmsnorm, rope, silu, attention, matmul)"
+    - "GGUF parsing (loader_std, header, tensor_index)"
+    - "Candle forward pass (embed, layer, lmhead)"
+    - "Dequantization (dequant/q4_k.rs)"
+    - "Memory-mapped tensor access (mmap.rs, tensor_projection.rs)"
+
+  rule: "brain/master calls hacedle. hacedle never imports brain/master."
+```
+
+---
+
+## HacedleBrain â€” required implementation (GAP-T5)
+
+```yaml
+file_to_create:  "fem/hacedle/src/brain/mod.rs"
+struct: |
+  pub struct HacedleBrain {
+      model:    LoadedModel,          // from hacedle::x::loader::gguf::loader_std
+      engine:   CandleInferenceEngine, // from hacedle::x::provider::candle::inference
+      kv:       KvCache,              // from brain/master injection OR owned here
+      tokenizer: Option<GgufTokenizer>, // optional â€” tokenizer may stay in master
+  }
+
+impl_BrainKernel: |
+  async fn reason(&self, ctx: ReasonCtx) -> Result<ReasonResult, BrainError> {
+      let ids    = ctx.memory.iter()... // use pre-tokenized ids from ctx.payload
+      let logits = self.engine.forward(&self.model, &ids, &mut self.kv)?;
+      let tok_id = logits::greedy(&logits);
+      Ok(ReasonResult { output: json!(tok_id), model_id: self.model_id(), ... })
+  }
+
+impl_BrainRuntime: |
+  async fn load(&self, artifact: BrainArtifact) -> Result<(), BrainError> {
+      // artifact.path -> GgufLoaderStd::open() -> self.model
+      // self.engine   = CandleInferenceEngine::init(&self.model)?
+  }
+
+effort: "4-6h â€” all ops/loader/engine already exist, only wiring needed"
+owner:  T3C
+```
+
+---
+
+## HacedleKernel bridge â€” required wire (kernel/hacedle.rs)
+
+```yaml
+file:   "brain/master/src/kernel/hacedle.rs"
+current_status: "SKELETON 1.74KB â€” method bodies are stubs"
+
+required_wire: |
+  use hace_fem_hacedle::x::provider::candle::inference::CandleInferenceEngine;
+  use hace_fem_hacedle::x::loader::gguf::loader_std::GgufLoaderStd;
+
+  pub struct HacedleKernel {
+      engine: CandleInferenceEngine,
+      model:  LoadedModel,
+  }
+
+  impl HacedleKernel {
+      pub fn from_gguf(path: &str) -> Result<Self, BrainError> {
+          let model  = GgufLoaderStd::open(path)...?;
+          let engine = CandleInferenceEngine::init(&model)?;
+          Ok(Self { engine, model })
+      }
+
+      pub fn forward(
+          &self, token_ids: &[u32], kv: &mut KvCache
+      ) -> Result<Vec<f32>, BrainError> {
+          self.engine.forward(&self.model, token_ids, kv)
+              .map_err(|e| BrainError::ReasonFailed { msg: e.to_string() })
+      }
+  }
+
+cargo_dep: |
+  # brain/master/Cargo.toml
+  hace-fem-hacedle = { path = "../../../../fem/hacedle",
+                       default-features = false,
+                       features = ["alloc", "candle-provider"] }
+```
+
+---
+
+## IPO contract
+
+```yaml
+input:
+  I1: "token_ids: &[u32]        â€” from BrainTokenizer::encode()"
+  I2: "model: &LoadedModel      â€” from GgufLoader::load()"
+  I3: "kv: &mut KvCache         â€” pre-allocated, passed in"
+  I4: "n_tokens_to_generate: u32 â€” default 1 for first token"
+
+process:
+  for pos in 0..token_ids.len():
+    emb    = embed(token_ids[pos], model.tensor_index)
+    hidden = for l in 0..model.model_spec.n_layers:
+               layer_forward(pos, hidden, &mut kv.layer(l), weights[l])
+  logits = lmhead_forward(hidden, model.tensor_index)
+  return logits
+
+output:
+  O1: "logits: Vec<f32>[vocab_size]"
+
+errors:
+  BrainError::RuntimeNotLoaded:  "HacedleKernel.forward() called before load()"
+  BrainError::ReasonFailed:      "any tensor shape mismatch, NaN, OOM â€” no panic"
+  BrainError::ContextTooLarge:   "token_ids.len() > model.model_spec.context_length"
+```
+
+---
+
+## Attention GAP-02 dependency
+
+```yaml
+attention_fix_required: |
+  fem/hacedle/src/ops/attention.rs::attention_weighted_sum()
+  has 'let output' (immutable) â€” always returns zeros.
+  
+  Fix: 'let mut output' + uncomment assignment.
+  
+  This BLOCKS layer.rs forward() from producing correct hidden states.
+  HacedleKernel.forward() will produce garbage logits until fixed.
+  
+  Priority: fix BEFORE wiring kernel bridge.
+  Effort: 10 minutes â€” single 'mut' keyword.
+```

@@ -1,0 +1,92 @@
+---
+header:
+  id: AIL://brain.canon.fan.runtime.v1
+  intent: DECLARE_FAN
+  status: ACTIVE
+  version: "1.0.0"
+  authority: CSA
+  updated: "2026-06-05"
+---
+
+# FAN: KvCache (EFC_Brain_KvCache)
+
+```yaml
+efc_id:   "EFC_BRAIN_KV_001"
+rfn:      "RFN://brain.runtime.kv_cache"
+
+input:
+  I1: "model_spec: ModelSpec { n_layers, n_kv_heads, head_dim }"
+  I2: "max_seq_len: usize â€” E4 default 512"
+
+process:
+  P1: "Allocate Vec<f32> sized [n_layers * max_seq * n_kv_heads * head_dim * 2]"
+  P2: "Split into k_cache / v_cache views"
+
+output:
+  O1: "KvCache { k: Vec<f32>, v: Vec<f32>, shape: KvShape }"
+
+error:
+  E1: "KvError::AllocFailed â€” seq_len > max_seq_len, return Err not panic"
+  E2: "KvError::InvalidShape â€” n_layers=0 or head_dim=0"
+
+memory_budget:
+  qwen2_0_5b_512:  "25.2 MB (n_layers=24, max_seq=512, kv_heads=8, head_dim=64)"
+  qwen2_0_5b_2048: "100.7 MB â€” WARNING: risky on PI device, use 512 default"
+
+crate_path:    "brain/master/src/runtime/kv_cache.rs"
+hacedle_kvm:   "fem/hacedle/src/x/loader/kvm/mod.rs â€” 0.44KB stub, not reusable yet"
+```
+
+---
+
+# FAN: Prefill (EFC_Brain_Prefill)
+
+```yaml
+efc_id:   "EFC_BRAIN_PREFILL_001"
+rfn:      "RFN://brain.runtime.prefill"
+
+input:
+  I1: "token_ids: &[u32]"
+  I2: "kv: &mut KvCache"
+  I3: "engine: &HacedleKernel"
+
+process:
+  for pos in 0..token_ids.len():
+    emb = engine.embed(token_ids[pos])
+    hs  = engine.forward_all_layers(pos, emb, kv)  # updates kv in-place
+  return hs  # hidden_state of last token
+
+output:
+  O1: "last_hidden: Vec<f32>[hidden_size]"
+
+error:
+  E1: "RuntimeError::LayerFailed { layer, msg } â€” no panic"
+  E2: "RuntimeError::KvFull â€” seq too long for cache"
+
+crate_path: "brain/master/src/runtime/prefill.rs"
+```
+
+---
+
+# FAN: Sampler (EFC_Brain_Sample)
+
+```yaml
+efc_id:   "EFC_BRAIN_SAMPLE_001"
+rfn:      "RFN://brain.runtime.sampler"
+
+input:
+  I1: "logits: &[f32]  â€” shape [vocab_size]"
+  I2: "strategy: SampleStrategy"
+
+strategies:
+  Greedy: "argmax(logits) â€” O(vocab) scan, zero alloc"
+  TopK:   "partial_sort top-k, sample with softmax â€” E4 default k=40"
+  TopP:   "nucleus â€” E4.5, defer"
+
+output:  "next_token_id: u32"
+error:
+  E1: "SampleError::NanLogits â€” replace nan with -inf before argmax"
+  E2: "SampleError::EmptyVocab â€” logits.len()==0"
+
+crate_path: "brain/master/src/runtime/logits.rs"
+```

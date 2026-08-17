@@ -1,0 +1,25 @@
+---
+header:
+  id: AIL://brain.canon.fan.kv-cache.deprecated.v2
+  intent: DEPRECATED
+  status: DEPRECATED
+  superseded_by: "canon/fan/runtime.ail"
+  deprecated_at: "2026-06-06"
+  authority: CSA
+---
+
+# DEPRECATED â€” use canon/fan/runtime.ail
+
+```yaml
+reason: |
+  This file (0.76KB) was created as a thin stub before canon/fan/runtime.ail
+  was written. fan/runtime.ail covers KvCache + Prefill + Sampler with full
+  IPO contracts, memory budgets, and error boundaries.
+
+redirect:
+  kv_cache: "canon/fan/runtime.ail#EFC_BRAIN_KV_001"
+  prefill:  "canon/fan/runtime.ail#EFC_BRAIN_PREFILL_001"
+  sampler:  "canon/fan/runtime.ail#EFC_BRAIN_SAMPLE_001"
+
+action: "Delete this file in next canon cleanup pass."
+```

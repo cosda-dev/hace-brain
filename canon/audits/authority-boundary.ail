@@ -1,0 +1,86 @@
+---
+header:
+  id: AUDIT://brain.authority-boundary.v1
+  intent: DECLARE_AUTHORITY_AUDIT
+  status: CANONICAL
+  authority: CSA
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# Authority Boundary Audit
+
+```yaml
+rules:
+
+  - id: ARA_001
+    name: BUILDER_CANNOT_CERTIFY_OWN_ARTIFACT
+    description: >
+      CTO/Coder CANNOT certify their own build.
+      Certification requires independent validation.
+    enforcement: ALWAYS
+
+  - id: ARA_002
+    name: TESTS_ARE_OWNED_BY_CSA
+    description: >
+      Validation scripts MUST be owned by CSA.
+      No self-certification allowed.
+    enforcement: ALWAYS
+
+  - id: ARA_003
+    name: STUB_IMPLEMENTATION_CANNOT_PASS_CERTIFICATION
+    description: >
+      Stub implementations MUST NOT pass certification.
+      Real file reading required for GGUF.
+    enforcement: ALWAYS
+
+  - id: ARA_004
+    name: HARD_CODED_OUTPUT_IS_VIOLATION
+    description: >
+      Hardcoded output (e.g., "qwen2", tensor_count: 291)
+      without file dependency is STUB violation.
+    enforcement: ALWAYS
+
+  - id: ARA_005
+    name: EVERY_ARTIFACT_HAS_OWNER
+    description: >
+      Every artifact MUST declare owner in canon.
+    enforcement: PRE_COMMIT
+
+  - id: ARA_006
+    name: EVERY_ARTIFACT_HAS_AUDITOR
+    description: >
+      Every artifact MUST have CSA validation script.
+    enforcement: POST_BUILD
+
+  - id: ARA_007
+    name: EVERY_FEATURE_HAS_CERTIFICATION_PATH
+    description: >
+      Every feature MUST have defined certification path.
+    enforcement: PRE_COMMIT
+
+  - id: ARA_008
+    name: AUTHORITY_BEFORE_EXECUTION
+    description: >
+      Authority check BEFORE execution.
+      FAN Registry lookup REQUIRED.
+    enforcement: RUNTIME
+
+boundary_check:
+
+  pre_commit:
+    - Run FAN Registry lookup
+    - Check ASI for integration path
+    - Validate Hookpoint boundary
+
+  post_build:
+    - CSA audit script execution
+    - Validation against golden fixtures
+    - Authority chain verification
+
+  runtime:
+    - FAN::resolve(feature) -> owner
+    - IF owner != consumer: DELEGATE
+    - IF no FAN: FAIL
+```

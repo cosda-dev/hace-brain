@@ -1,0 +1,155 @@
+# CTO Brain Status Report - 2026-06-04
+
+```yaml
+header:
+  id: CTO_BRAIN_STATUS_20260604
+  intent: REPORT
+  status: DRAFT
+  scope: local
+  author: CTO_ROLE
+```
+
+## Alpha-3 Status Summary
+
+```yaml
+alpha3_status:
+  architecture: 90%
+  runtime_truth: 50-60%
+  
+components:
+  validated:
+    - architecture_logic
+    - api_contract
+    - tensor_flow_design
+    - lro_overlay_design
+    - kv_fusion_design
+    
+  not_validated:
+    - real_gguf_loading
+    - real_q4k_dequant
+    - real_rope
+    - real_attention
+    - real_transformer
+    - real_sampling
+    - real_lora_runtime
+```
+
+## CRD Directives - Phase A3-R1 to A3-R4
+
+### Phase A3-R1: First Real Token
+
+```yaml
+goal:
+  model: Qwen2.5-0.5B.gguf
+  prompt: "hello"
+  output: token_id
+  
+exit_criteria:
+  - gguf_loader: PASS
+  - q4k: PASS
+  - first_token: PASS
+  - replay: PASS
+  - divergence: PASS
+  - lro_attach: PASS
+```
+
+### Phase A3-R2: GGUF Certification
+
+```yaml
+gguf_cert_required:
+  - header
+  - metadata
+  - tensor_index
+  - tensor_offset
+  - tensor_shape
+  - tensor_type
+
+target_output:
+  model:
+    tensors: 291
+    metadata: 42
+    size: 397MB
+```
+
+### Phase A3-R3: Q4K Certification
+
+```yaml
+q4k_truth:
+  reference: llama.cpp
+  max_abs_error: < 1e-5
+```
+
+### Phase A3-R4: Replay Golden
+
+```yaml
+golden_generation:
+  source: llama.cpp
+  layers:
+    - block0
+    - block1
+    - block2
+    - ... (24 total)
+```
+
+## Priority 30-Day Roadmap
+
+```yaml
+P0:
+  - first_real_token
+  
+P1:
+  - replay_certification
+  
+P2:
+  - lro_runtime
+  
+P3:
+  - dynamic_brain
+  
+P4:
+  - sio_boundary
+  
+P5:
+  - aura_hydration
+  
+P6:
+  - alliag_ecosystem
+```
+
+## Alpha-4 Vision Preview
+
+```yaml
+zeus_complete:
+  components:
+    - GGUF
+    - LRO
+    - KV_Fusion
+    - DoRA
+    - S-LoRA
+    - Brain_Router
+    
+brain_tiering:
+  tier_nano:
+    - qwen_0.5b
+  tier_micro:
+    - qwen_1.5b
+  tier_mini:
+    - qwen_3b
+  tier_macro:
+    - qwen_7b
+```
+
+## Action Items
+
+1. **Build scripts for brain runtime verification** - tao tai `brain/tests/`
+2. **GGUF loader certification** - xac nhan doc duoc tensors
+3. **Q4K dequant verification** - so sanh voi llama.cpp
+4. **First token generation** - chay model thuc
+
+---
+
+## Next Steps
+
+- Thuc thi `hace brain --model qwen2.5-0.5b.gguf --prompt "hello"`
+- Tram thao golden tensors tu llama.cpp
+- Chay replay test o `brain/tests/`

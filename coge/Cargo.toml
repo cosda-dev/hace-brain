@@ -1,0 +1,13 @@
+[package]
+name = "hace-brain-coge"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Coge - Edge Brain execution layer"
+
+[dependencies]
+hace-fem-cat = { path = "../../fem/cat" }
+
+[lib]
+name = "hace_brain_coge"
+path = "src/lib.rs"

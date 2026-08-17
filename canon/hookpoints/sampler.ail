@@ -1,0 +1,79 @@
+---
+header:
+  id: HOOKPOINT://brain.sampler.v1
+  intent: DECLARE_AUTHORITY_BOUNDARY
+  status: CANONICAL
+  authority: CSA
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# Hookpoint: Sampler
+
+```yaml
+hookpoint:
+  id: brain.sampler
+  name: Brain Sampler Hookpoint
+
+authority:
+  owner: brain/master
+  mutable: true
+  steward: hacedle
+
+dependencies:
+  - brain.inference
+  - brain.kv-cache
+
+input:
+  - logits:
+      type: array
+      element_type: f32
+  - temperature:
+      type: f32
+      required: false
+  - top_p:
+      type: f32
+      required: false
+
+output:
+  - token_id:
+      type: u32
+
+methods:
+  - name: greedy_sample
+    signature: greedy_sample(logits: &[f32]) -> u32
+  - name: top_p_sample
+    signature: top_p_sample(logits: &[f32], top_p: f32) -> u32
+  - name: temperature_sample
+    signature: temperature_sample(logits: &[f32], temperature: f32) -> u32
+
+contracts:
+  - contract_id: SAMPLER_V1
+    spec: >
+      Sampler must:
+      - Support greedy (argmax) sampling
+      - Support top-p nucleus sampling
+      - Support temperature scaling
+      - NOT hardcode output
+
+providers:
+  preferred:
+    - path: fem/hacedle/src/x/provider/candle/sampler.rs
+      struct: SamplerEngine
+      status: PARTIAL_IMPL
+
+restrictions:
+  - id: RES_001
+    rule: no_hardcoded_output
+    description: >
+      Sampler MUST use real logits.
+      No hardcoded token returns.
+
+ownership:
+  owner: brain/master
+  steward: hacedle
+  consumers:
+    - brain/runtime
+    - brain/session
+```

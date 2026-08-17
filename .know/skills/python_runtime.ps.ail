@@ -1,0 +1,49 @@
+# Python Runtime Skills - Windows PowerShell vs WSL/Linux
+
+```yaml
+header:
+  id: SKILL://brain.python-runtime.ps
+  intent: EXECUTION_GUIDE
+```
+
+## PowerShell (Windows)
+
+```powershell
+# Run Python scripts
+py script.py
+python script.py
+python3 script.py
+
+# Common commands
+py -m pip install package
+py -c "print('hello')"
+```
+
+## WSL/Linux
+
+```bash
+# Run Python scripts
+python3 script.py
+python script.py
+
+# Common commands
+python3 -m pip install package
+python3 -c "print('hello')"
+```
+
+## Cross-platform Script Wrapper
+
+```powershell
+# .know/scripts/run.ps1
+param($Script, $Args)
+$cmd = "py $Script $Args"
+Invoke-Expression $cmd
+```
+
+## Current Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `test_alpha3_components.py` | Component validation |
+| `simulate_inference.py` | Inference flow simulation |
+| `validate_gguf_skeleton.py` | GGUF structure check |

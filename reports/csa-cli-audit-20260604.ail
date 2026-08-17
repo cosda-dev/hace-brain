@@ -1,0 +1,224 @@
+---
+# CSA CLI AUDIT REPORT
+# Kiem toan thuc dia CLI layer: rr/cli, hace/cli, me/clie, brain/cli
+
+```yaml
+artifact_id: csa-cli-audit-20260604
+artifact_type: AUDIT_REPORT
+role_origin: CSA
+datetime: "2026-06-04"
+locale: en-core / vi-85
+files_read:
+  - engine/rr/cli/src/lib.rs            (4.07KB, 2026-03-31)
+  - engine/hace/cli/src/dispatcher.rs   (2.54KB, 2026-06-04)
+  - engine/hace/cli/src/ir.rs           (0.60KB)
+  - engine/hace/cli/src/ir_builder.rs   (6.67KB, 2026-06-04)
+  - engine/hace/cli/src/main.rs         (1.56KB, 2026-06-04)
+  - engine/hace/cli/src/cmd/brain.rs    (0.69KB, 2026-06-04)
+  - engine/hace/me/clie/src/lib.rs      (1.74KB, 2026-04-23)
+  - engine/hace/me/clie/src/core.rs     (0.76KB)
+  - engine/hace/me/clie/src/orch.rs     (3.08KB, 2026-04-03)
+  - engine/hace/brain/cli/src/*         (10 files, 2026-06-04)
+```
+
+---
+
+## A1. RR/CLI DNA
+
+```yaml
+path: engine/rr/cli/src/lib.rs
+no_std: true
+
+structs:
+  CliCommand:      {family:CommandFamily, action:&str, raw:&str}
+  ParsedCommandHead: {style:CommandStyle, head:&str, tail:&str, left:Option<&str>, right:Option<&str>}
+
+enums:
+  CommandStyle: [Artisan, Git, Domain, Unknown]
+  CommandFamily: [Intent, Rfn, Cap, Ape, Rc, Evidence, Helio]
+  # MISSING: Brain
+
+functions:
+  parse_family(name) -> Option<CommandFamily>
+  is_known_family(name) -> bool
+  is_known_action(family, action) -> bool
+  detect_style(head, tail) -> CommandStyle
+  parse_command_head(raw) -> ParsedCommandHead
+
+registered_actions:
+  intent: [parse, inspect, normalize]
+  rfn:    [resolve, inspect, route]
+  cap:    [discover, inspect, providers, compatibility, register]
+  ape:    [discover, verify, assemble, run, inspect, seal]
+  rc:     [bind, verify, inspect, issue]
+  evidence: [trace, inspect, commit]
+  helio:  [search, pull, verify, publish]
+
+CRITICAL_GAP:
+  parse_family("brain") = None
+  is_known_family("brain") = FALSE
+  consequence: ME gate rejects ALL "hace brain *" before dispatcher
+  fix: Add CommandFamily::Brain + BRAIN_ACTIONS to rr/cli lib.rs
+```
+
+---
+
+## A2. HACE/CLI DNA
+
+```yaml
+CliIR:
+  fields: {qpid:String, hid:String, namespace:String, command:String,
+           args:Vec<IRArg>, flags:Vec<String>, payload:Option<Vec<u8>>}
+  methods: [arg(key)->Option<&str>, has_flag(flag)->bool]
+
+CommandModule_trait:
+  fn namespace(&self) -> &'static str
+  fn handle(&self, ir:CliIR, ctx:&Context) -> Result<()>
+
+Registry:
+  HashMap<String, Box<dyn CommandModule>>
+  registered: [amo, brain, comet, force, serve, hot, audit]
+
+gate_via_me_flow:
+  dispatch(ir) -> gate_via_me(ir,ctx) -> clie.parse(ParseInput) -> ValidationResult
+  if Rejected -> Err(UnknownCommand)
+  NOTE: clie.parse calls rr_orch which calls rr/cli -> brain NOT registered = Rejected
+
+cmd/brain.rs_current:
+  BrainArgs: {model:String, prompt:String, max_tokens:u32, temp:f32, top_p:f32}
+  execute(): println!(stub) only
+  BrainModule::handle(): calls execute() -- does NOT delegate to brain/cli crate
+
+ir_builder from_brain:
+  namespace: "brain"
+  command: "infer"   # HARDCODED -- no subcommand routing
+  all brain sub-actions collapse to single "infer"
+
+main.rs_CRITICAL:
+  type: STANDALONE_MANUAL_BYPASS
+  does_NOT_use: Artisan/clap/dispatcher/Registry/gate_via_me/Clie
+  flow: args[1]=="brain" -> handle_brain() -> println!(stub)
+  VERDICT: entire hace/cli architecture bypassed
+  GAP: two competing paths -- main.rs(stub) vs lib.rs(full dispatcher)
+```
+
+---
+
+## A3. ME/CLIE DNA
+
+```yaml
+Clie::parse(ParseInput) -> Result<ParseOutput>
+
+ParseInput:
+  fields: [raw_command, env_ref, source, actor_id, authority_level:AuthorityLevel]
+  AuthorityLevel: [User, Operator, Sovereign]
+
+ParseOutput:
+  fields: [parsed_command_ref, command_style, target_me_ref, validation_result]
+  ValidationResult: [Accepted, Rejected, Pending]
+
+orch_flow:
+  1. trim raw
+  2. HookBus::trigger -> Continue|Abort|UpdateCommand
+  3. detect unsafe_flags [--force,--override,--seal,--sudo]
+  4. rr_orch(SovereignRuntime, req, auth) -> out
+  5. from_rr_response(out) -> ParseOutput
+
+HookBus:
+  hooks: &[&dyn Hook]
+  brain/cli CAN inject custom hooks here
+
+no_std: true  # brain/cli extensions must not assume std
+
+CRITICAL_CONSTRAINT:
+  rr_orch calls rr/cli families list
+  "brain" not in list -> ValidationResult depends on rr_me_clie_core behavior
+  RISK: Rejected for all "brain *" unless rr/cli extended
+```
+
+---
+
+## A4. BRAIN/CLI AUDIT
+
+```yaml
+path: engine/hace/brain/cli/src/
+files:
+  lib.rs:       0.58KB  command.rs:  1.31KB  router.rs:   0.71KB
+  executor.rs:  2.10KB  model.rs:    0.98KB  lora.rs:     1.23KB
+  replay.rs:    1.15KB  inspect.rs:  0.59KB  profile.rs:  0.48KB
+  benchmark.rs: 0.88KB
+
+structural_assessment:
+  command.rs:   BrainAction enum {Model,Lora,Replay,Inspect,Bench,Profile} -- STRUCTURAL
+  router.rs:    BrainRouter::route(BrainAction) -> executor -- STRUCTURAL
+  executor.rs:  BrainExecutor / ModelExecutor / LoraExecutor / ReplayExecutor -- STUB
+  model.rs:     ModelExecutor -- STUB (no GgufLoader call)
+  lora.rs:      LoraExecutor -- STUB (no LroStack call)
+  replay.rs:    ReplayExecutor -- STUB (no golden compare)
+  inspect.rs:   STUB
+  benchmark.rs: STUB
+
+GAPS:
+  G1: brain/cli NOT in hace/cli Cargo.toml -- crate unreachable from binary
+  G2: brain/cli does NOT implement CommandModule trait from hace/cli
+  G3: brain/cli does NOT call Clie::parse() -- no ME gate enforcement
+  G4: executors do NOT call brain/runtime -> BrainKernel -> hacedle
+  G5: kv.rs MISSING (in CRD spec, not created)
+  G6: help.rs MISSING
+  G7: Cargo.toml has NO deps on hace-brain-runtime or hace-fem-hacedle
+  G8: hace brain chat NOT implemented (P0 priority)
+  G9: BrainAction enum disconnected from cmd/brain.rs BrainArgs
+```
+
+---
+
+## A5. WIRING GAP MATRIX
+
+```yaml
+W-C1 CRITICAL:
+  gap:   BrainModule::handle() in hace/cli does NOT call hace_brain_cli::dispatch_ir()
+  fix:   impl CommandModule for BrainModule { fn handle -> hace_brain_cli::dispatch_ir(ir) }
+  impact: brain/cli crate unreachable from hace binary
+
+W-C2 CRITICAL:
+  gap:   rr/cli has no CommandFamily::Brain
+  fix:   add Brain enum variant + BRAIN_ACTIONS const slice
+  impact: ME gate rejects all "hace brain *"
+
+W-C3 CRITICAL:
+  gap:   executor stubs do not call BrainKernel::execute()
+  fix:   wire each executor -> brain/master/src/kernel/
+  impact: no real inference, no real LRO, no real replay
+
+W-C4 CRITICAL:
+  gap:   main.rs manual bypass -- Artisan/dispatcher/gate_via_me all bypassed
+  fix:   main.rs = Artisan::parse() + ir_builder + dispatcher
+  impact: entire CLI architecture dead letter
+
+W-H1:
+  gap:   brain/cli Cargo.toml no deps on hace-brain-runtime / hace-fem-hacedle
+  fix:   add path deps
+
+W-H2:
+  gap:   BrainArgs flat struct -- no subcommand routing
+  fix:   BrainCommand enum with Model(ModelArgs)|Lora(LoraArgs)|Chat|Run|...
+
+W-H3:
+  gap:   hace/cli Cargo.toml no hace-brain-cli dependency
+  fix:   add {path="../brain/cli"}
+```
+
+---
+
+## A6. COMPONENT SCORECARD
+
+```yaml
+rr_cli:        completeness:90%  correctness:95%  integration:60%  # brain not registered
+hace_cli_disp: completeness:70%  correctness:85%  integration:40%  # brain/cli not wired
+hace_cli_main: completeness:30%  correctness:50%  integration:20%  # manual bypass
+hace_me_clie:  completeness:75%  correctness:90%  integration:70%  # brain family missing
+brain_cli:     completeness:55%  correctness:70%  integration:10%  # not wired anywhere
+
+overall_brain_cli_readiness: 25%
+primary_blockers: [W-C4 main.rs bypass, W-C1 BrainModule no delegate, W-C2 rr/cli no brain]
+```

@@ -1,0 +1,412 @@
+---
+header:
+  id: AIL://brain.reports.csa.alpha3-audit.20260605T120000Z
+  intent: CSA_AUDIT_ALPHA3
+  status: ACTIVE
+  authority: CSA
+  locale: vi-85
+  version: "1.0.0"
+  datetime: "2026-06-05T12:00:00+07:00"
+  scope: >
+    brain/master/src/provider/gguf/*
+    brain/master/src/kernel/*
+    brain/master/src/inference/*
+    fem/hacedle/src/x/loader/gguf/*
+    fem/hacedle/src/x/provider/candle/*
+    fem/hacedle/src/x/loader/kvm/*
+    fem/hacedle/src/x/loader/dequant/*
+---
+
+# CSA Alpha-3 Audit
+## Ket luan chien luoc (Executive Finding)
+
+**G1 khong hoan thanh. G1 la hardcoded stub tra ve "qwen2"/291 tensors â€” khong doc GGUF thuc.**
+**Real GGUF loader da ton tai trong hacedle â€” khong duoc su dung.**
+
+---
+
+## I. ASSET INVENTORY â€” Da co, chua bi dung (Existing, unused)
+
+```yaml
+# fem/hacedle/src/x/loader/gguf/* â€” DA CO, REAL IMPLEMENTATION
+hacedle_gguf_assets:
+  header.rs:
+    size:    1.87 KB
+    role:    "GGUF magic check, version, tensor_count, kv_count parser"
+    status:  REAL_IMPL
+    note:    "Doc 4-byte magic 'GGUF', version u32, tensor_count u64, kv_count u64"
+
+  loader.rs:
+    size:    3.79 KB
+    role:    "GgufLoader::load() â€” opens file, parses header + metadata KV + tensors"
+    status:  REAL_IMPL
+    note:    "Nhat phong phu nhat. Doc va index tensor theo ten."
+
+  loader_std.rs:
+    size:    2.31 KB
+    role:    "Std-based GGUF loader (std::fs::File + BufReader)"
+    status:  REAL_IMPL
+
+  metadata.rs:
+    size:    0.69 KB
+    role:    "GgufMetadata struct â€” architecture, context_length, block_count..."
+    status:  PARTIAL_IMPL
+
+  tensor_index.rs:
+    size:    3.68 KB
+    created: "2026-06-04"
+    role:    "TensorIndex â€” name->offset map, tensor_count, quant_type per tensor"
+    status:  REAL_IMPL
+    note:    "Moi nhat (ngay 04), chinh xac nhat, dung cho G3 tensor inventory"
+
+  tensor_projection.rs:
+    size:    4.13 KB
+    role:    "TensorProjection â€” slice tensor data tu mmap offset"
+    status:  REAL_IMPL
+
+  tensor_view.rs:
+    size:    1.20 KB
+    role:    "TensorView â€” type-safe tensor slice wrapper"
+    status:  REAL_IMPL
+
+  truth_loader.rs:
+    size:    2.35 KB
+    created: "2026-06-04"
+    role:    "TruthLoader â€” verified load pipeline voi checksum"
+    status:  REAL_IMPL
+
+  model_spec.rs:
+    size:    1.89 KB
+    role:    "ModelSpec { hidden_size, n_heads, n_kv_heads, ffn_dim, vocab_size }"
+    status:  REAL_IMPL
+
+  quant_router.rs:
+    size:    0.96 KB
+    role:    "Route tensor theo GGML quant type (Q4K, Q8_0, F16, F32)"
+    status:  REAL_IMPL
+
+  mmap.rs:
+    size:    0.38 KB
+    role:    "MmapFile wrapper â€” lazy tensor access"
+    status:  PARTIAL_STUB
+
+# fem/hacedle/src/x/provider/candle/* â€” DA CO, PARTIAL INFERENCE
+hacedle_candle_assets:
+  inference.rs:
+    size:    2.44 KB
+    created: "modified 2026-06-04T07:56"
+    role:    "CandleInferenceEngine::forward() â€” transformer forward pass"
+    status:  PARTIAL_IMPL
+
+  layer.rs:
+    size:    2.41 KB
+    created: "2026-06-04"
+    role:    "TransformerLayer â€” attention + FFN per block"
+    status:  PARTIAL_IMPL
+
+  lmhead.rs:
+    size:    3.12 KB
+    created: "modified 2026-06-04T07:57"
+    role:    "LmHead â€” linear projection to vocab logits (THE LOGITS SOURCE)"
+    status:  PARTIAL_IMPL
+    note:    "Day la noi tao logits. Neu hoat dong -> G7 (first logits) kha thi."
+
+  embed.rs:
+    size:    1.42 KB
+    role:    "EmbeddingLayer â€” token_id -> embedding vector"
+    status:  PARTIAL_IMPL
+
+# fem/hacedle/src/x/loader/dequant/* â€” DA CO
+hacedle_dequant:
+  q4_k.rs:
+    size:    1.69 KB
+    role:    "Q4_K dequantization â€” Qwen2.5 0.5B su dung Q4_K_M"
+    status:  REAL_IMPL
+
+# fem/hacedle/src/x/loader/kvm/* â€” STUB
+hacedle_kvm:
+  mod.rs:
+    size:    0.44 KB
+    role:    "KV memory â€” KV cache interface"
+    status:  STUB
+    note:    "Rat nho â€” co kha nang chi la enum/struct skeleton"
+```
+
+---
+
+## II. BRAIN/MASTER STUB MAP â€” Tinh trang hien tai
+
+```yaml
+brain_master_gguf:
+  src/provider/gguf/loader.rs:
+    size:    1.07 KB
+    created: "2026-06-05T08:17"
+    verdict: HARDCODED_STUB
+    proof:   "BrainGgufLoader::verify() tra ve hardcoded {arch:'qwen2', tensors:291} khong phu thuoc path"
+    gap:     "KHONG goi hacedle::x::loader::gguf::GgufLoader"
+
+  src/provider/gguf/metadata.rs:
+    size:    1.16 KB
+    verdict: DUPLICATE_STRUCT
+    gap:     "Dinh nghia lai GgufMetadata da co trong hacedle â€” 2 struct tach roi"
+
+  src/provider/gguf/mmap.rs:
+    size:    0 bytes
+    verdict: EMPTY_FILE
+    gap:     "MmapFile da co trong hacedle/x/loader/gguf/mmap.rs â€” khong dung"
+
+  src/provider/gguf/tensor.rs:
+    size:    1.54 KB
+    verdict: PARALLEL_STRUCT
+    gap:     "TensorInfo dinh nghia rieng â€” TensorIndex da co trong hacedle (3.68KB)"
+
+  src/kernel/hacedle.rs:
+    size:    1.74 KB
+    created: "2026-06-04"
+    verdict: BRIDGE_SKELETON
+    gap:     "HacedleKernel trait? Nhung method bodies la stub â€” khong goi hacedle inference"
+
+  src/inference/engine.rs:
+    size:    0.68 KB
+    verdict: STUB
+    gap:     "InferenceEngine::infer() khong goi hacedle::candle::CandleInferenceEngine"
+
+  src/inference/mod.rs:
+    size:    1.0 KB
+    verdict: TYPES_ONLY
+
+  src/inference/request.rs:
+    size:    1.12 KB
+    verdict: STRUCT_ONLY
+
+tokenizer:
+  verdict:  MISSING_ENTIRELY
+  location: "Khong co bat ky file nao lien quan tokenizer trong brain/* hoac hacedle/*"
+  impact:   "HARD BLOCKER cho G5, G7, G8 â€” khong co tokenizer thi khong the inference"
+
+kv_cache:
+  verdict:  MISSING_REAL
+  location: "hacedle/x/loader/kvm/mod.rs = 0.44KB stub only"
+  impact:   "BLOCKER cho G6 (prefill), G7 (logits), G8 (first token)"
+```
+
+---
+
+## III. GAP TABLE â€” Alpha-3 completion path
+
+```yaml
+gap_table:
+  G1_verify:
+    claimed: "COMPLETE"
+    actual:  "STUB â€” hardcoded output, khong doc file thuc"
+    fix: >
+      brain/master/src/provider/gguf/loader.rs phai goi
+      hacedle::x::loader::gguf::loader_std::GgufLoaderStd::load(path).
+      KHONG reimpl. Re-use loader_std.rs.
+    owner: CTO
+    effort: "2h"
+
+  G2_inspect:
+    actual:  "NOT STARTED"
+    available: >
+      hacedle/x/loader/gguf/metadata.rs + header.rs chua du key fields (architecture,
+      context_length, block_count). Metadata KV parser can bo sung.
+    gap: "KV parser chi doc u32/u64, chua xu ly string type GGUF KV"
+    owner: CTO
+    effort: "3h"
+
+  G3_tensor_inventory:
+    actual:  "NOT STARTED in brain"
+    available: "hacedle/x/loader/gguf/tensor_index.rs (3.68KB, new) â€” DA CO INDEX"
+    fix: >
+      brain/cli model tensors command -> goi TensorIndex::build_from_file(path)
+      -> print TensorEntry list. Zero reimpl needed.
+    owner: CTO
+    effort: "1h (chi la wire + print)"
+
+  G4_mmap:
+    actual:  "brain/master/src/provider/gguf/mmap.rs = 0 bytes"
+    available: "hacedle/x/loader/gguf/mmap.rs (0.38KB) + tensor_projection.rs (4.13KB)"
+    fix:     "bridge/master mmap -> hacedle mmap + TensorProjection cho lazy access"
+    owner:   CTO
+    effort:  "2h"
+
+  G5_tokenizer:
+    actual:  "KHONG TON TAI bat ky dau"
+    available: "NOTHING in codebase"
+    options:
+      A: "Dung tokenizers-rs crate (HuggingFace) â€” nhanh nhat, safe, da tested"
+      B: "Doc vocab.json + merges.txt tu GGUF metadata manually"
+      C: "BPE tu scratch â€” qua cham, khong can thiet"
+    csa_recommendation: "Option A: tokenizers crate. Add dep vao Cargo.toml."
+    effort:  "4h (dep + wire + test)"
+    note:    "Qwen2.5 dung tiktoken/cl100k-like tokenizer. tokenizers crate support native."
+
+  G6_kv_cache:
+    actual:  "hacedle/x/loader/kvm/mod.rs = 0.44KB (stub)"
+    required: >
+      KvCache { k: Vec<Vec<f32>>, v: Vec<Vec<f32>>, n_layers, n_heads, head_dim }
+      prefill(token_ids: &[u32]) -> cache populated
+    effort:  "4h â€” struct + prefill loop"
+    owner:   CTO
+
+  G7_logits:
+    actual:  "hacedle/x/provider/candle/lmhead.rs (3.12KB) â€” PARTIAL"
+    blocker: "Can G5 (tokenizer) + G6 (kv_cache) + tensor loaded vao memory"
+    chain:   "token_ids -> embed -> layer[0..n] -> lmhead -> logits[vocab_size]"
+    effort:  "6h sau khi G5+G6 done"
+
+  G8_first_token:
+    actual:  "KHONG TON TAI"
+    blocker: "G7 logits phai hoat dong"
+    required: "greedy sampler: argmax(logits) -> token_id -> decode -> string"
+    effort:  "1h sau G7"
+
+alpha3_critical_path:
+  order: "G1_fix -> G4_mmap -> G3_tensor(parallel) -> G5_tokenizer -> G6_kv -> G7_logits -> G8_token"
+  gate:  "G5 tokenizer la bottleneck doc lap â€” bat dau ngay song song voi G1_fix"
+  total_estimate: "2+2+1+4+4+6+1 = 20h focused work"
+```
+
+---
+
+## IV. DUPLICATION VIOLATIONS â€” CTO phai fix
+
+```yaml
+duplication_violations:
+  brain_master_gguf_metadata_vs_hacedle:
+    brain:   "brain/master/src/provider/gguf/metadata.rs (1.16KB) â€” GgufMetadata struct"
+    hacedle: "fem/hacedle/src/x/loader/gguf/metadata.rs (0.69KB) â€” GgufMetadata"
+    verdict: "DUPLICATE TYPE. Xoa brain/master version, re-export tu hacedle."
+
+  brain_tensor_vs_hacedle_tensor_index:
+    brain:   "brain/master/src/provider/gguf/tensor.rs (1.54KB) â€” TensorInfo"
+    hacedle: "fem/hacedle/src/x/loader/gguf/tensor_index.rs (3.68KB) â€” TensorIndex"
+    verdict: "brain version nho hon, it dung hon. Xoa, dung TensorIndex tu hacedle."
+
+  brain_mmap_empty_vs_hacedle_mmap:
+    brain:   "brain/master/src/provider/gguf/mmap.rs (0 bytes)"
+    hacedle: "fem/hacedle/src/x/loader/gguf/mmap.rs (0.38KB)"
+    verdict: "Xoa brain version. Wire brain -> hacedle mmap directly."
+
+  two_gguf_loaders:
+    brain:   "brain/master/src/provider/gguf/loader.rs (1.07KB) â€” STUB"
+    hacedle: "fem/hacedle/src/x/loader/gguf/loader.rs (3.79KB) â€” REAL"
+    verdict: "brain loader.rs phai DELEGATE toi hacedle loader, khong reimpl."
+```
+
+---
+
+## V. TOKENIZER â€” Critical missing component
+
+```yaml
+tokenizer_analysis:
+  target_models:
+    - "Qwen2.5-0.5B: uses tiktoken-based BPE (151936 vocab, cl100k-like)"
+    - "Phi-3-mini:    uses llama tokenizer (32064 vocab)"
+    - "Llama-nano:    uses SentencePiece BPE (32000 vocab)"
+
+  gguf_tokenizer_data:
+    location: "metadata KV trong GGUF file chinh"
+    keys:
+      - "tokenizer.ggml.model (string: 'gpt2' | 'llama' | 'rwkv')"
+      - "tokenizer.ggml.tokens (array of strings: vocab)"
+      - "tokenizer.ggml.scores (array f32: BPE scores)"
+      - "tokenizer.ggml.merges (array strings: BPE merges)"
+    note: "tokenizers crate co the doc GGUF tokenizer format native."
+
+  recommended_impl:
+    crate: "tokenizers = '0.19'"
+    path:  "brain/master/src/tokenizer/"
+    files:
+      mod.rs:     "BrainTokenizer trait: encode(&str)->Vec<u32>, decode(&[u32])->String"
+      gguf_tok.rs: "GgufTokenizer: load tu GGUF metadata, wrap tokenizers::Tokenizer"
+    cli_commands:
+      - "hace brain tokenize 'hello' -> [9707]"
+      - "hace brain detokenize 9707  -> 'hello'"
+```
+
+---
+
+## VI. ALPHA-3 INFERENCE CHAIN â€” Trang thai vs Can dat
+
+```yaml
+current_state: |
+  hace brain prompt "hello"
+    -> BrainMasterRuntime::execute()
+    -> SioOutcome::default()         <- VOID
+
+required_state: |
+  hace brain prompt "hello"
+    -> CLI -> InferRequest { prompt: "hello", model: "qwen.gguf" }
+    -> BrainMasterRuntime::execute(sio)
+    -> GgufLoaderStd::load("qwen.gguf")   [hacedle, reuse]
+      -> GgufHeader { tensors: 291 }
+      -> TensorIndex { "token_embd.weight" -> offset }
+      -> ModelSpec { hidden: 896, heads: 14, layers: 24 }
+    -> GgufTokenizer::encode("hello") -> [9707]
+    -> EmbeddingLayer::forward([9707]) -> f32[1, 896]
+    -> TransformerLayer[0..23]::forward() -> f32[1, 896]
+    -> LmHead::forward()              -> f32[1, 151936]
+    -> greedy: argmax(logits)         -> token_id: 1917 ("world")
+    -> GgufTokenizer::decode([1917])  -> " world"
+    -> print: "hello world"
+
+wiring_needed:
+  - "brain/master/src/provider/gguf/loader.rs -> hacedle::loader_std::GgufLoaderStd"
+  - "brain/master/src/kernel/hacedle.rs -> hacedle::candle::CandleInferenceEngine"
+  - "brain/master/src/inference/engine.rs -> kernel/hacedle + tokenizer"
+  - "brain/master/src/tokenizer/ -> CREATE (tokenizers crate dep)"
+  - "brain/master/src/runtime/ -> CREATE (kv_cache.rs + prefill.rs)"
+```
+
+---
+
+## VII. CSA VERDICT & NEXT DIRECTIVES
+
+```yaml
+verdict:
+  g1_status:    "STUB â€” khong hoan thanh nhu da report"
+  blocking_now: "G5 tokenizer â€” khong co thi G7/G8 khong the dat duoc"
+  reuse_mandate: >
+    CTO phai su dung hacedle::x::loader::gguf::loader_std + tensor_index + mmap.
+    hacedle::x::provider::candle::{inference,layer,lmhead,embed} cho inference chain.
+    KHONG reimpl bat ky thu gi da ton tai trong hacedle/x/*.
+  duplicate_to_delete:
+    - "brain/master/src/provider/gguf/metadata.rs (superseded by hacedle)"
+    - "brain/master/src/provider/gguf/mmap.rs (0 bytes, superseded)"
+    - "brain/master/src/provider/gguf/tensor.rs (superseded by TensorIndex)"
+
+next_directives_for_cto:
+  T1_immediate:
+    task:   "Add tokenizers dep to hace-brain-master Cargo.toml"
+    effort: "15 min"
+    why:    "Long pole â€” tokenizer compile takes time, start now"
+
+  T2_same_day:
+    task:   "brain/master/src/provider/gguf/loader.rs delegate to hacedle::GgufLoaderStd"
+    effort: "2h"
+    output: "hace brain model verify qwen.gguf prints REAL metadata, not hardcoded"
+
+  T3_same_day:
+    task:   "brain/master/src/tokenizer/mod.rs + gguf_tok.rs â€” GgufTokenizer"
+    effort: "4h"
+    output: "hace brain tokenize 'hello' -> token ids"
+
+  T4_next_day:
+    task:   "brain/master/src/runtime/kv_cache.rs â€” KvCache struct + prefill()"
+    effort: "4h"
+    dependency: "T2 (tensor loading) must complete first"
+
+  T5_next_day:
+    task:   "brain/master/src/inference/engine.rs wire -> hacedle candle chain"
+    effort: "6h"
+    dependency: "T3 + T4"
+    output: "real logits from real GGUF"
+
+  T6_final:
+    task:   "greedy sampler + first token output"
+    effort: "1h"
+    dependency: "T5"
+    output: "hace brain prompt 'hello' -> 'hello world'"
+```

@@ -1,0 +1,140 @@
+---
+header:
+  id: AIL://brain.reports.csa.cli-audit.20260604T180000Z
+  intent: CSA_CLI_AUDIT
+  status: ACTIVE
+  authority: CSA
+  locale: vi-85
+  version: "1.0.0"
+  datetime: "2026-06-04T18:00:00+07:00"
+  scope: "engine/hace/{cli,me/clie,brain/cli}"
+---
+
+# CSA CLI Audit â€” brain/cli + hace/cli
+## Trieu chung (Reported symptoms)
+
+```
+hace brain prompt "hello"           â†’ tokens (ASCII placeholder)  â€” WRONG
+hace brain model verify model.gguf  â†’ stub output                 â€” WRONG
+hace brain replay save session.sio  â†’ stub output                 â€” WRONG
+-bash: syntax error near unexpected token `('                     â€” SHELL BUG
+hace brain --model  --prompt        â†’ max_tokens: 64 (empty args) â€” WRONG
+hace brain --model  --prompt        â†’ max_tokens: 64 (same again) â€” SAME OUTPUT
+```
+
+**Root cause summary: 3 independent bugs, not 1.**
+
+---
+
+## BUG-1 | All commands same output â€” DISPATCH VOID
+
+```yaml
+root_cause: "brain/cli/src/executor.rs routes moi subcommand toi cung 1 stub"
+evidence:
+  - "brain/runtime/src/bridges/hacedle.rs::execute_inference() = prompt.bytes().map(|b| b as u32)"
+  - "BrainMasterRuntime.execute() = Ok(SioOutcome::default()) â€” tra ve ngay"
+  - "CandleProvider.execute() = Ok(SioOutcome::default())"
+  - "LlamaProvider.execute() = Ok(SioOutcome::default())"
+dispatch_chain_actual: |
+  hace brain prompt "hello"
+    -> brain::BrainCmd::dispatch()
+    -> executor::BrainExecutor::run()
+    -> BrainMasterRuntime::execute()   <- tat ca subcommands deu vao day
+    -> SioOutcome::default()           <- tra ve rong
+    -> print tokens/stub               <- output giong nhau
+
+dispatch_chain_expected: |
+  hace brain prompt "hello"
+    -> PromptCmd::run(prompt="hello", model=cfg)
+    -> ZeusRuntime::execute(ReasonCtx { action="hello" })
+    -> AlgoParticle::reason() hoac HacedleBrain::reason()
+    -> print ReasonResult.output
+
+  hace brain model verify model.gguf
+    -> ModelCmd::verify(path="model.gguf")
+    -> TensorResolver::load_gguf(path)
+    -> print metadata: layers, tensors, quant_type
+
+  hace brain replay save session.sio
+    -> ReplayCmd::save(path="session.sio")
+    -> SessionStore::save(path)
+    -> print "saved: session.sio"
+```
+
+---
+
+## BUG-2 | `-bash: syntax error near unexpected token '('`
+
+```yaml
+root_cause: "Shell tries to execute hace as shell function/alias, not binary"
+mechanism: |
+  Khi 'hace' khong phai la binary trong PATH ma la:
+  - Shell function co syntax error: function hace() { ... ( ... } <- loi ngoac
+  - Hoac: alias hace='...(...)...' <- bash reject
+  - Hoac: hace binary chua build/install, bash fall-through to eval output
+    va output chua '(' (e.g. "AlgoParticle { ... }" )
+
+most_likely: |
+  brain/scripts/ hoac hace/cli/build_msvc.bat chua shell function
+  hoac hace binary chua duoc 'cargo install' vao PATH.
+  User chay 'hace brain ...' trong bash nhung hace la Windows .exe
+  khong executable trong bash/WSL context.
+
+diagnosis: |
+  'hace' binary la Windows PE (.exe), khong phai ELF.
+  Neu chay trong Git Bash / WSL: chua duoc build cho Linux target.
+  Neu chay trong PowerShell: nen dung hace.exe hoac cargo run --bin hace.
+
+fix: "Xem PATCH-3 ben duoi"
+```
+
+---
+
+## BUG-3 | `--model  --prompt` empty values + `max_tokens: 64` always
+
+```yaml
+root_cause: "Arg parser khong read value sau flag â€” hoac print debug format thay output"
+evidence:
+  - "hace brain --model  --prompt (no values after flags)"
+  - "max_tokens: 64 xuat hien tren dong rieng â€” debug print, khong phai real output"
+mechanism: |
+  brain/cli/src/command.rs dinh nghia arg parsing.
+  Neu dung clap: `--model <MODEL>` nhung thieu <MODEL> placeholder
+  hoac takes_value(true) chua set -> value bi parse thanh next flag.
+  
+  "max_tokens: 64" la debug print tu BrainExecutor hoac BrainCmd::run():
+    println!("max_tokens: {}", self.max_tokens);
+  
+  Tat ca commands print cung debug format vi dispatch void (BUG-1).
+
+fix: "Xem PATCH-1 ben duoi"
+```
+
+---
+
+## PATCH DIRECTIVES â€” CTO/Cogen execute
+
+### PATCH-1 | brain/cli/src/command.rs â€” fix arg defs
+
+```yaml
+file: "engine/hace/brain/cli/src/command.rs"
+action: REWRITE
+principle: "moi subcommand co OwnerArgs rieng, khong share struct"
+```
+
+### PATCH-2 | brain/cli/src/brain.rs + executor.rs â€” fix dispatch
+
+```yaml
+file: "engine/hace/brain/cli/src/brain.rs"
+action: REWRITE
+principle: "match subcommand -> call correct handler, not same executor"
+```
+
+### PATCH-3 | Shell/build â€” fix bash syntax error
+
+```yaml
+files:
+  - "engine/hace/cli/build_msvc.bat -> them shebang hoac doi ten .sh"
+  - "Makefile hoac .cargo/config -> add alias hoac cargo run wrapper"
+action: "Xem PATCH-3 section"
+```

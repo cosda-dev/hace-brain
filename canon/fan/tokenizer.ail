@@ -1,0 +1,59 @@
+---
+header:
+  id: AIL://brain.canon.fan.tokenizer.v1
+  intent: DECLARE_FAN
+  status: ACTIVE
+  version: "1.0.0"
+  authority: CSA
+  updated: "2026-06-05"
+---
+
+# FAN: Tokenizer (EFC_Brain_Tokenizer)
+
+```yaml
+efc_id:   "EFC_BRAIN_TOK_001"
+efc_name: "brain_tokenizer_bpe"
+rfn:      "RFN://brain.tokenizer.bpe_gguf"
+
+input:
+  I1: "text: &str â€” raw prompt text"
+  I2: "loaded_model: &LoadedModel â€” GGUF with tokenizer KV"
+
+process:
+  P1: "Extract vocab + merges from GGUF metadata KV"
+  P2: "Construct tokenizers::Tokenizer from vocab/merges"
+  P3: "encode(text) -> Vec<u32>"
+
+output:
+  O1: "token_ids: Vec<u32>"
+  O2: "TokenizerMeta { vocab_size, bos_id, eos_id, model_type }"
+
+error:
+  E1: "TokenizerError::VocabNotLoaded â€” GGUF missing tokenizer.ggml.tokens"
+  E2: "TokenizerError::EncodeFailed   â€” tokenizers crate returns error"
+
+feh_inputs:  [text_utf8, vocab_hash, merges_hash]
+feh_outputs: [token_ids_sha256]
+
+crate_path:    "brain/master/src/tokenizer/mod.rs"
+delegate_none: "tokenizer is brain/master owned â€” no hacedle delegation"
+dep_required:  "tokenizers = 0.19 in brain/master/Cargo.toml"
+
+test_fixture: "audit/fixtures/hello_tokens.json"
+test_cmd:     "hace brain tokenize 'hello' -> [9707]"
+```
+
+---
+
+# FAN: Decode (EFC_Brain_Detokenizer)
+
+```yaml
+efc_id:   "EFC_BRAIN_DETOK_001"
+rfn:      "RFN://brain.tokenizer.bpe_decode"
+
+input:    "token_ids: &[u32]"
+output:   "text: String"
+error:    "TokenizerError::DecodeFailed"
+
+test_cmd: "hace brain detokenize 9707 -> 'hello'"
+```

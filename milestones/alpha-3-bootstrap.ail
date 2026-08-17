@@ -1,0 +1,77 @@
+# Alpha-3 Bootstrap Milestone - CRD Priority Reorder
+
+```yaml
+header:
+  id: ALPHA3_BOOTSTRAP
+  intent: TRACK
+  status: PENDING
+  priority: CRITICAL
+```
+
+## CRD Priority Reorder (FES Chain)
+
+```yaml
+phase_alpha3_bootstrap:
+  
+  P0:
+    - compile_clean
+    - remove_stubs
+    - runtime_dispatch_chain
+    tasks:
+      - [ ] Clean dispatcher.rs stubs
+      - [ ] Remove ASCII echo in bridges
+      - [ ] Fix ProviderFactory dispatch
+      
+  P1:
+    - brain_kernel_implementation
+    - bridge_wiring
+    - master_runtime_completion
+    tasks:
+      - [ ] Implement BrainKernel for HacedleBrain
+      - [ ] Implement BrainKernel for HacetralBrain
+      - [ ] Wire HacedleBridge -> BrainRuntime
+      - [ ] Wire HacetralBridge -> BrainRuntime
+      
+  P2:
+    - provider_factory_real
+    - candle_provider_wiring
+    - llama_provider_wiring
+    tasks:
+      - [ ] ProviderFactory::create() real dispatch
+      - [ ] CandleProvider implementation
+      - [ ] LlamaProvider implementation
+      
+  P3:
+    - first_token_generation
+    tasks:
+      - [ ] GGUF model loading
+      - [ ] Token generation from "hello"
+      - [ ] Output token_id
+      
+  P4:
+    - gguf_optimization
+    - lora_runtime
+    - benchmark_suite
+    tasks:
+      - [ ] GGUF loader optimization
+      - [ ] LoRA runtime complete
+      - [ ] Benchmark integration
+```
+
+## Blocked Path
+
+Current:
+```text
+MasterRuntime
+  -> DummyProvider
+      -> SioOutcome::default()
+```
+
+Target (unblock):
+```text
+MasterRuntime
+  -> ProviderFactory::create("hacedle")
+      -> HacedleBrain
+          -> InferenceEngine
+              -> Real token output
+```

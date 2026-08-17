@@ -1,0 +1,692 @@
+---
+header:
+  id: AIL://brain.reports.csa.audit.20260604T120000Z
+  intent: CSA_FIELD_AUDIT
+  status: ACTIVE
+  authority: CSA
+  locale: vi-85
+  version: "1.0.0"
+  datetime: "2026-06-04T12:00:00+07:00"
+  scope: "engine/hace/brain/{base,runtime,master,hooks,src} + engine/hace/fem/hacedle/src"
+  discipline: "Pragmatic E4 Production-Ready â€” zero speculation"
+---
+
+# CSA Brain Audit â€” engine/hace/brain/*
+## Pham vi khao sat (Audit Scope)
+
+```yaml
+paths_scanned:
+  - engine/hace/brain/base/src/lib.rs
+  - engine/hace/brain/runtime/src/{lib,router,executor,dispatcher,context,session,outcome}.rs
+  - engine/hace/brain/runtime/src/bridges/{mod,hacedle,hacetral}.rs
+  - engine/hace/brain/master/src/{lib,dispatcher,context,outcome,session}.rs
+  - engine/hace/brain/master/provider/{mod,descriptor,registry,selector,factory}.rs
+  - engine/hace/brain/master/provider/{candle,llama}/mod.rs
+  - engine/hace/brain/master/execute/mod.rs
+  - engine/hace/brain/src/block/{brain_block,attention}.rs
+  - engine/hace/brain/src/op/{rmsnorm,rope,matmul,silu}.rs
+  - engine/hace/brain/src/registry/operator_registry.rs
+  - engine/hace/fem/hacedle/src/{lib,resolver/tensor_resolver}.rs
+  - engine/hace/fem/hacedle/src/ops/{mod,rmsnorm,rope,silu,attention}.rs
+  - engine/hace/brain/reports/{auditor-brain-gaps,auditor-brain-structure}-20260604.ail
+previous_reports_reviewed:
+  - auditor-brain-gaps-20260604.ail      # confirms P1-P3 gaps
+  - auditor-brain-structure-20260604.ail # confirms bridge stubs + dispatch void
+```
+
+---
+
+## I. BREAK MAP â€” Diem gay can patch ngay (Ordered by kill-impact)
+
+### GAP-01 | P0 | brain/src/ â€” ORPHAN CRATE (Khong compile duoc)
+
+```yaml
+severity: P0_COMPILE_BLOCKER
+location: engine/hace/brain/src/
+finding: >
+  Thu muc nay chua KHONG CO Cargo.toml.
+  brain/src/{block,op,compose,core,facade,registry} la code vat ly ton tai
+  nhung khong thuoc bat ky crate nao trong workspace.
+  Khong the compile, khong the test, khong the import.
+evidence:
+  - "brain/src/ khong xuat hien trong workspace Cargo.toml members list"
+  - "brain_block.rs line 3: 'use crate::vkm::LayerKv' â€” module 'vkm' khong ton tai"
+  - "brain_block.rs line 4: 'use crate::abi::tensor::ArenaHandle' â€” module 'abi' khong ton tai"
+  - "operator_registry.rs line 4: 'use std::collections::HashMap' â€” vi pham no_std"
+action_required:
+  option_A: >
+    Tao crate 'hace-brain-ops' tai engine/hace/brain/ops/ voi Cargo.toml,
+    di chuyen brain/src/op/* vao day, xoa BOM char (UTF-8 BOM prefix \xEF\xBB\xBF
+    hien dien trong matmul.rs va brain_block.rs).
+  option_B: >
+    Xoa toan bo brain/src/ va REUSE fem/hacedle/src/ops/* (da ton tai, da test,
+    no_std-safe). Xem GAP-05 ve duplication.
+  csa_recommendation: option_B  # Force reuse, zero new crate
+  owner: CTO
+  blocking: GAP-03, GAP-05
+```
+
+### GAP-02 | P0 | attention_weighted_sum â€” ALWAYS RETURNS ZEROS (Logic bug)
+
+```yaml
+severity: P0_LOGIC_BUG
+locations:
+  - "engine/hace/fem/hacedle/src/ops/attention.rs::attention_weighted_sum()"
+  - "engine/hace/brain/src/block/attention.rs::attention_weighted_sum()"
+finding: >
+  Ca hai ham attention_weighted_sum() deu tra ve Vec<f32> all-zeros.
+root_cause:
+  hacedle_ops: >
+    'let output = vec![0.0f32; ...]' â€” khai bao IMMUTABLE.
+    Dong ghi gia tri bi comment out voi ghi chu 'Cannot assign to vec!'.
+    Dev nham: can 'let mut output'.
+  brain_src_block: >
+    'let scores = vec![0.0f32; n_heads * n_heads]' â€” IMMUTABLE.
+    Vong for tiep theo ghi 'scores[i * n_heads + j] = sum / ...' se COMPILE ERROR
+    vi scores la immutable. File nay khong compile duoc.
+impact: "Moi attention output deu la zero â€” inference hoan toan sai"
+fix_required:
+  hacedle_ops: "doi 'let output' thanh 'let mut output', bo comment dong ghi"
+  brain_src: "Khong can fix â€” xoa theo option_B cua GAP-01"
+  owner: CTO/Cogen
+  effort: "15 phut â€” chi la 'let mut'"
+```
+
+### GAP-03 | P0 | BrainBlock::forward() â€” PLACEHOLDER, MISSING DEPS
+
+```yaml
+severity: P0_BROKEN_IMPL
+location: engine/hace/brain/src/block/brain_block.rs::forward()
+finding: |
+  pub fn forward(&self, hidden: &[f32], kv_cache: &mut crate::vkm::LayerKv, pos: usize) -> Vec<f32> {
+      let mut q = vec![0.0f32; self.q_proj_weight.len() / hidden.len()];
+      // MISSING: QKV projection + RoPE + Attention + FFN
+      q  // tra ve vec zeros
+  }
+sub_issues:
+  - "crate::vkm::LayerKv khong ton tai (module vkm chua duoc tao)"
+  - "crate::abi::tensor::ArenaHandle khong ton tai"
+  - "forward() tra ve placeholder â€” khong co QKV, khong co FFN"
+  - "Dimensions hardcode Qwen2.5 7B (3584, 512, 18944) â€” khong portable"
+action: >
+  Neu theo option_B (GAP-01), xoa brain_block.rs.
+  Thay the bang viec implement BrainBlock trong hace-brain-ops crate MOI
+  chi su dung fem/hacedle/src/ops/* lam executor â€” khong duplicate ops.
+  Hoac: wire BrainBlock.forward() thang toi hacedle::ops::attention::attention_forward().
+owner: CTO
+```
+
+### GAP-04 | P0 | fem/hacedle/src/brain/ â€” EMPTY DIRECTORY
+
+```yaml
+severity: P0_MISSING_IMPL
+location: engine/hace/fem/hacedle/src/brain/  (0 files)
+finding: >
+  Thu muc brain/ trong hacedle da duoc tao nhung chua KHONG CO file nao.
+  Day la noi can implement HacedleBrain struct voi impl BrainKernel.
+  Khong co HacedleBrain -> HacedleBridge khong the wire -> ZeusRouter
+  khong co local CE -> inference bi disabled hoan toan.
+missing:
+  - "HacedleBrain struct { resolver: TensorResolver, quant: QuantTensorView }"
+  - "impl BrainKernel for HacedleBrain"
+  - "impl BrainRuntime for HacedleBrain"
+  - "infer(prompt: &str) -> Vec<u32>"
+dependency_chain: >
+  HacedleBrain (MISSING)
+    <- HacedleBridge.execute_inference() (stub)
+    <- ZeusRouter.local_ce (None â€” never set)
+    <- ZeusRuntime.execute() (falls to AlgoParticle always)
+action: >
+  CTO implement hace-fem-hacedle::brain::HacedleBrain.
+  Struct chi can: TensorResolver + QuantTensorView + FinalRMSNorm.
+  BrainKernel::reason() goi infer() internal.
+  BrainRuntime::load() nap GGUF qua TensorResolver.
+owner: CTO/Cogen  # priority T1
+effort: "4-6h â€” TensorResolver + QuantTensorView da co, chi can wire"
+```
+
+### GAP-05 | P1 | OPS DUPLICATION â€” brain/src/op/* vs fem/hacedle/src/ops/*
+
+```yaml
+severity: P1_DUPLICATION_RISK
+finding: "Hai bo implementation ops gan giong nhau â€” se phan ky theo thoi gian"
+duplication_map:
+  rmsnorm:
+    brain_src:   "brain/src/op/rmsnorm.rs â€” rmsnorm(input, weight, eps) -> Vec<f32>"
+    hacedle_ops: "fem/hacedle/src/ops/rmsnorm.rs â€” rms_norm() + FinalRMSNorm struct"
+    verdict: "DUPLICATE. hacedle version phong phu hon (co FinalRMSNorm), dung no."
+
+  rope:
+    brain_src:   "brain/src/op/rope.rs â€” rope(theta, pos, dim, x: &mut [f32]) in-place"
+    hacedle_ops: "fem/hacedle/src/ops/rope.rs â€” apply_rope_pairwise() returns new Vec"
+    verdict: >
+      API KHAC NHAU. brain dung in-place mut, hacedle tra Vec moi.
+      Chon 1 convention truoc khi wire vao BrainBlock.
+      CSA recommend: in-place mut vi zero-alloc, phu hop no_std.
+
+  matmul:
+    brain_src:   "brain/src/op/matmul.rs â€” matmul() + matmul_transpose()"
+    hacedle_ops: "KHONG TON TAI trong fem/hacedle/src/ops/"
+    verdict: >
+      matmul chi co trong brain/src/op/. Can chuyen vao hace-brain-ops crate
+      hoac vao fem/hacedle/src/ops/ de tap trung.
+
+  silu:
+    brain_src:   "brain/src/op/silu.rs â€” silu() + silu_inplace()"
+    hacedle_ops: "fem/hacedle/src/ops/silu.rs â€” silu() only, no inplace"
+    verdict: "DUPLICATE. Merge vao 1 file, giu inplace variant."
+
+  attention:
+    brain_src:   "brain/src/block/attention.rs â€” compute_attention_scores() bug (immutable)"
+    hacedle_ops: "fem/hacedle/src/ops/attention.rs â€” attention_scores() + weighted_sum() bug"
+    verdict: "CA HAI bi bug (xem GAP-02). Fix hacedle version, xoa brain/src version."
+
+action: >
+  Xoa brain/src/op/* (sau khi add Cargo.toml hoac xoa toan bo brain/src/).
+  Tat ca ops tap trung vao fem/hacedle/src/ops/ + add matmul.rs vao day.
+  BrainBlock import tu hacedle::ops truc tiep.
+  Khong duplicate. Khong new crate neu khong thuc su can.
+owner: CTO
+```
+
+### GAP-06 | P1 | TRIPLE RuntimeSio DEFINITION â€” Schema break
+
+```yaml
+severity: P1_SCHEMA_BREAK
+finding: "Ba dinh nghia RuntimeSio khong tuong thich ton tai dong thoi"
+instances:
+  A:
+    location: "engine/hace/brain/runtime/src/lib.rs"
+    fields: "prompt: Option<String>, max_tokens, temperature, top_p, runtime: RuntimeConfig"
+    used_by: "ZeusRouter, HacedleBridge, BrainRouter, BrainExecutor"
+
+  B:
+    location: "engine/hace/brain/runtime/src/context.rs (301B)"
+    status: "UNREAD â€” likely another partial definition"
+    risk: "Trung lap voi A"
+
+  C:
+    location: "engine/hace/brain/master/src/context.rs"
+    fields: "header: SioHeader, intent, knowledge, ruleset, reality, runtime, context"
+    used_by: "BrainMasterRuntime, BrainSession, RuntimeDispatcher"
+    note: >
+      Day la SIO day du (align voi hace.sio spec).
+      A chi la prompt wrapper â€” khong phai SIO.
+
+impact: >
+  BrainMasterRuntime nhan master::RuntimeSio nhung goi Dispatcher voi no.
+  ZeusRouter nhan runtime::RuntimeSio (chi co prompt).
+  Hai layer khong the noi thang voi nhau ma khong co adapter.
+action: >
+  Doi ten runtime::RuntimeSio -> PromptRequest hoac InferRequest.
+  master::RuntimeSio giu la canonical SIO struct.
+  ZeusRouter nhan InferRequest (extracted tu SIO.intent.objective).
+  Xoa context.rs trong runtime/ neu trung voi lib.rs.
+owner: CSA (define) -> CTO (implement)
+```
+
+### GAP-07 | P1 | DUAL ROUTER â€” ZeusRouter vs BrainRouter
+
+```yaml
+severity: P1_DUPLICATION
+locations:
+  ZeusRouter: "brain/runtime/src/lib.rs â€” routes via BrainKernel trait, CE.Algo/Local/Remote"
+  BrainRouter: "brain/runtime/src/router.rs â€” routes via sio.runtime.provider string match"
+finding: >
+  Hai routing systems ton tai trong cung mot crate.
+  BrainRouter chi switch on string ('candle','llama','hacetral').
+  ZeusRouter dung BrainKernel trait + complexity classification â€” correct.
+action: >
+  DELETE brain/runtime/src/router.rs.
+  ZeusRouter la canonical. BrainRouter la redundant string-switch.
+  Provider string selection thuoc ProviderSelector trong brain/master/ (da co).
+owner: CTO
+effort: "5 phut â€” delete file"
+```
+
+### GAP-08 | P1 | BrainMasterRuntime.execute() â€” VOID DISPATCH
+
+```yaml
+severity: P1_DISPATCH_DEAD
+location: "engine/hace/brain/master/src/lib.rs::BrainMasterRuntime::execute()"
+code: |
+  pub async fn execute(&self, sio: RuntimeSio) -> Result<SioOutcome, &'static str> {
+      let session = BrainSession::from_sio(sio);  // tao session
+      let outcome = SioOutcome::default();          // outcome rong
+      Ok(outcome)                                   // tra ve ngay, khong lam gi
+  }
+finding: >
+  execute() khong goi dispatcher, khong goi provider, khong goi ZeusRuntime.
+  Toan bo infrastructure (ProviderRegistry, ProviderSelector, ProviderFactory,
+  CandleProvider, LlamaProvider) KHONG DUOC SU DUNG.
+required_flow: |
+  execute(sio):
+    1. ProviderSelector.select(&sio) -> ProviderType
+    2. ProviderRegistry.select(Capability::Inference) -> provider_id
+    3. provider.execute(&sio) -> SioOutcome
+    Hoac (preferred E4):
+    1. extract InferRequest from sio.intent.objective
+    2. ZeusRuntime.execute(ReasonCtx) -> ReasonResult
+    3. map ReasonResult -> SioOutcome
+action: >
+  Wire execute() theo required_flow option 2 (ZeusRuntime path).
+  ZeusRuntime da co, AlgoParticle da hoat dong.
+  Sau khi GAP-04 done (HacedleBrain), wire local_ce = HacedleBrain.
+owner: CTO
+```
+
+### GAP-09 | P1 | ProviderFactory ALWAYS returns DummyProvider
+
+```yaml
+severity: P1_FACTORY_VOID
+location: "engine/hace/brain/master/provider/factory.rs::ProviderFactory::create()"
+code: |
+  pub fn create(_cfg: &ProviderConfig) -> Option<Arc<dyn BrainProvider>> {
+      Some(Arc::new(DummyProvider::default()))  // ignores cfg.provider_type!
+  }
+finding: >
+  CandleProvider va LlamaProvider da duoc implement nhung KHONG BAO GIO
+  duoc tao boi Factory. Factory ignore provider_type, luon tra DummyProvider.
+action: |
+  match cfg.provider_type {
+      ProviderType::Candle   => Some(Arc::new(CandleProvider::new())),
+      ProviderType::Llama    => Some(Arc::new(LlamaProvider::new())),
+      ProviderType::Hacetral => todo!("E4.5"),
+      _                      => None,
+  }
+note: >
+  CandleProvider.execute() va LlamaProvider.execute() van la stub (Ok(default())).
+  Nhung it nhat Factory se tao dung type â€” tao nen tang cho GAP-10.
+owner: CTO
+effort: "15 phut"
+```
+
+### GAP-10 | P1 | CandleProvider/LlamaProvider.execute() â€” STUB
+
+```yaml
+severity: P1_PROVIDER_STUB
+locations:
+  - "brain/master/provider/candle/mod.rs::CandleProvider::execute() -> Ok(default())"
+  - "brain/master/provider/llama/mod.rs::LlamaProvider::execute() -> Ok(default())"
+finding: >
+  Ca hai provider deu co stub execute() khong goi inference nao.
+  Day la noi can wire toi ZeusRuntime (Candle path) va fem/llama (Llama path).
+note: >
+  KHONG DUPLICATE inference logic. Provider.execute() chi nen:
+  1. Extract prompt tu RuntimeSio
+  2. Goi ZeusRuntime.execute(ReasonCtx) hoac fem::llama::LlamaBrain::reason()
+  3. Map ket qua sang SioOutcome
+action: >
+  Sau GAP-04 done (HacedleBrain), CandleProvider.execute() wire toi
+  ZeusRuntime { local_ce: HacedleBrain }.execute().
+  LlamaProvider.execute() wire toi fem::llama crate.
+owner: CTO
+blocking_on: GAP-04
+```
+
+### GAP-11 | P2 | RuntimeDispatcher.dispatch() â€” LET _ = SESSION
+
+```yaml
+severity: P2_STUB
+location: "engine/hace/brain/runtime/src/dispatcher.rs::dispatch()"
+code: |
+  pub async fn dispatch(&self, session: &BrainSession) -> Result<SioOutcome, &'static str> {
+      let _ = session;  // throws away input
+      Ok(SioOutcome::default())
+  }
+finding: >
+  RuntimeDispatcher ton tai nhung khong dispatch gi ca.
+  ProviderHandle struct co id va available bool nhung khong co Arc<dyn BrainProvider>.
+action: >
+  Doi ProviderHandle chua Arc<dyn BrainProvider> thay vi chi String id.
+  dispatch() chon provider dua tren session.profile_id, goi provider.execute().
+  Hoac xoa RuntimeDispatcher va goi ZeusRuntime truc tiep tu BrainMasterRuntime.
+  CSA recommendation: xoa RuntimeDispatcher â€” redundant layer.
+owner: CTO
+```
+
+### GAP-12 | P2 | execute/mod.rs â€” STRING LITERAL STUB
+
+```yaml
+severity: P2_STUB
+location: "engine/hace/brain/master/execute/mod.rs"
+code: |
+  pub fn execute_brain() -> &'static str { "TODO" }
+  pub struct Checkpoint;
+  pub struct TelemetryData;
+finding: >
+  execute_brain() tra ve string literal. Checkpoint va TelemetryData la empty struct.
+  execute/execute.rs, execute/checkpoint.rs, execute/telemetry.rs duoc pub mod
+  nhung khong ton tai vat ly â€” compile error.
+action: >
+  Xoa public mod declarations cho execute, checkpoint, telemetry cho den khi implement.
+  Chi giu: 'pub use execute_brain' va empty stubs.
+  Hoac: xoa execute/mod.rs, tich hop vao BrainMasterRuntime.execute() truc tiep.
+owner: CTO
+effort: "10 phut"
+```
+
+### GAP-13 | P2 | OperatorRegistry â€” std::HashMap vi pham no_std
+
+```yaml
+severity: P2_NO_STD_VIOLATION
+location: "engine/hace/brain/src/registry/operator_registry.rs line 4"
+code: "use std::collections::HashMap;"
+finding: >
+  brain/master dung #![cfg_attr(not(feature = 'std'), no_std)] + alloc.
+  Nhung operator_registry dung std::HashMap truc tiep.
+  Se compile fail khi build voi feature = 'alloc' khong co 'std'.
+action: >
+  Neu giu file nay: doi sang alloc::collections::BTreeMap.
+  Neu theo GAP-01 option_B: xoa file, khong can fix.
+owner: CTO
+```
+
+### GAP-14 | P2 | BrainBlock hardcode Qwen2.5 7B dimensions
+
+```yaml
+severity: P2_PORTABILITY
+location: "engine/hace/brain/src/block/brain_block.rs::from_gguf_tensors()"
+hardcoded_dims:
+  rms_attn_norm_weight: "vec![1.0; 3584]   # Qwen2.5 7B hidden_size"
+  q_proj_bias:          "vec![0.0; 3584]   # Qwen2.5 7B"
+  k_proj_bias:          "vec![0.0; 512]    # Qwen2.5 7B kv_heads"
+  gate_proj_bias:       "vec![0.0; 18944]  # Qwen2.5 7B ffn_intermediate"
+finding: >
+  Khong co ModelConfig struct. Dimensions cung la so ma thuat.
+  Se sai voi Qwen2.5 0.5B, 1.5B, 3B, hoac bat ky model khac.
+action: >
+  Neu giu BrainBlock: inject ModelConfig { hidden_size, n_heads, n_kv_heads,
+  ffn_intermediate } vao from_gguf_tensors().
+  Neu theo GAP-01 option_B: khong can fix.
+owner: CTO
+```
+
+---
+
+## II. REUSE MANDATE â€” Cac executor da ton tai, KHONG DUOC BUILD LAI
+
+```yaml
+reuse_directive: "CSA enforces reuse-first. Build new only when existing is provably insufficient."
+
+existing_assets_to_reuse:
+  fem_hacedle_ops:
+    path: "engine/hace/fem/hacedle/src/ops/{rmsnorm,rope,silu,attention}.rs"
+    status: "no_std, alloc-safe, tested"
+    mandate: >
+      KHONG tao brain/src/op/* moi. Import hacedle::ops truc tiep.
+      Sau khi fix GAP-02 (let mut), day la canonical ops for inference.
+
+  fem_hacedle_resolver:
+    path: "engine/hace/fem/hacedle/src/resolver/tensor_resolver.rs"
+    status: "TensorResolver + TensorDescriptor â€” no_std BTreeMap, complete"
+    mandate: >
+      HacedleBrain (GAP-04) PHAI dung TensorResolver co san.
+      Khong implement resolver moi.
+
+  fem_hacedle_quant:
+    path: "engine/hace/fem/hacedle/src/quant_view/mod.rs"
+    status: "QuantTensorView, dequant_q4_k_exact, q5_0, q6_k, q8_0 â€” complete"
+    mandate: >
+      HacedleBrain::load() dung QuantTensorView de read GGUF tensors.
+      Khong build dequant rieng.
+
+  brain_base_algo:
+    path: "engine/hace/brain/base/src/lib.rs::AlgoParticle"
+    status: "BrainKernel impl, deterministic, tested â€” WORKS"
+    mandate: "Giu lam default CE khi HacedleBrain chua san. ZeusRouter da fallback dung."
+
+  zeus_router:
+    path: "engine/hace/brain/runtime/src/lib.rs::ZeusRouter + ZeusRuntime"
+    status: "Routing logic correct, hook stubs registered, tests pass"
+    mandate: "Day la canonical router. DELETE BrainRouter (router.rs)."
+
+  provider_registry_selector:
+    path: "engine/hace/brain/master/provider/{registry,selector,descriptor}.rs"
+    status: "BTreeMap-based, no_std-safe, capability routing logic complete"
+    mandate: >
+      Khong build ProviderRegistry moi. Wire BrainMasterRuntime.execute()
+      dung ProviderSelector + ProviderRegistry co san.
+```
+
+---
+
+## III. PRIORITY TASK LIST â€” Next impl order cho CTO/Cogen
+
+```yaml
+priority_ordered_tasks:
+
+  T1:
+    id: "BRAIN-T1"
+    title: "Fix attention_weighted_sum â€” let mut (2 locations)"
+    owner: Cogen
+    effort: "15 min"
+    files:
+      - "engine/hace/fem/hacedle/src/ops/attention.rs"
+    patch: |
+      // Line 3: doi 'let output' -> 'let mut output'
+      // Uncomment: output[i * head_dim + d] = sum;
+    why_first: "Block moi inference dung output â€” zero effort, max impact"
+
+  T2:
+    id: "BRAIN-T2"
+    title: "Implement HacedleBrain in fem/hacedle/src/brain/mod.rs"
+    owner: CTO
+    effort: "4-6h"
+    reuse:
+      - "TensorResolver (co san)"
+      - "QuantTensorView (co san)"
+      - "hacedle::ops::* (sau T1)"
+      - "BrainKernel trait (co san trong hace-brain-base)"
+    minimal_impl: |
+      pub struct HacedleBrain {
+          resolver: TensorResolver,
+          config:   ModelConfig,    // hidden_size, n_heads, n_kv_heads, ffn_dim
+          quant:    Option<QuantTensorView>,
+      }
+      impl BrainKernel for HacedleBrain { ... }
+      impl BrainRuntime for HacedleBrain {
+          fn load(&self, artifact: BrainArtifact) -> Result<(), BrainError> {
+              // parse GGUF, register tensors into resolver
+          }
+          fn unload() { ... }
+      }
+    note: "infer() chi can forward 1 block de test, expand sau"
+
+  T3:
+    id: "BRAIN-T3"
+    title: "Wire HacedleBridge -> HacedleBrain (thay the byte-cast stub)"
+    owner: CTO
+    effort: "1h"
+    after: T2
+    file: "engine/hace/brain/runtime/src/bridges/hacedle.rs"
+    patch: |
+      // Xoa execute_inference() byte-cast
+      // HacedleBridge { brain: HacedleBrain }
+      // invoke() -> brain.reason(ReasonCtx) -> map tokens
+
+  T4:
+    id: "BRAIN-T4"
+    title: "Wire BrainMasterRuntime.execute() -> ZeusRuntime"
+    owner: CTO
+    effort: "2h"
+    after: T3
+    file: "engine/hace/brain/master/src/lib.rs"
+    patch: |
+      // execute(sio):
+      //   req = InferRequest::from_sio(&sio)
+      //   zeus.execute(ReasonCtx::from(req)).await
+      //   .map(|r| SioOutcome::from(r))
+    prereq: "Dinh nghia SioOutcome::from(ReasonResult) adapter"
+
+  T5:
+    id: "BRAIN-T5"
+    title: "Fix ProviderFactory â€” match provider_type, tao dung CandleProvider/LlamaProvider"
+    owner: Cogen
+    effort: "30 min"
+    file: "engine/hace/brain/master/provider/factory.rs"
+    note: "Provider.execute() van la stub sau T5, nhung Factory dung type"
+
+  T6:
+    id: "BRAIN-T6"
+    title: "DELETE brain/runtime/src/router.rs (BrainRouter â€” redundant)"
+    owner: CTO
+    effort: "5 min"
+    action: "Delete file, remove pub use khoi lib.rs neu co"
+
+  T7:
+    id: "BRAIN-T7"
+    title: "Resolve brain/src/ orphan â€” decision: DELETE hoac tao crate"
+    owner: CSA (decision) -> CTO (execute)
+    effort: "30 min"
+    csa_decision: >
+      DELETE engine/hace/brain/src/ toan bo.
+      Ly do: brain/src/op/* duplicate fem/hacedle/src/ops/,
+      brain/src/block/* co bug (compile error, wrong imports),
+      khong co Cargo.toml, khong phai workspace member.
+      Ops da co trong hacedle. Block se implement trong HacedleBrain sau T2.
+    files_to_delete:
+      - "engine/hace/brain/src/block/brain_block.rs"
+      - "engine/hace/brain/src/block/attention.rs"
+      - "engine/hace/brain/src/op/rmsnorm.rs"
+      - "engine/hace/brain/src/op/rope.rs"
+      - "engine/hace/brain/src/op/matmul.rs"
+      - "engine/hace/brain/src/op/silu.rs"
+      - "engine/hace/brain/src/registry/operator_registry.rs"
+
+  T8:
+    id: "BRAIN-T8"
+    title: "Add matmul.rs vao fem/hacedle/src/ops/ (duy nhat it ton tai o day)"
+    owner: Cogen
+    effort: "30 min"
+    action: >
+      Copy logic tu brain/src/op/matmul.rs, doi sang alloc::vec::Vec style,
+      add vao fem/hacedle/src/ops/mod.rs.
+    note: "Chi matmul chua co trong hacedle ops â€” tat ca op khac da duplication"
+
+  T9:
+    id: "BRAIN-T9"
+    title: "Resolve RuntimeSio naming conflict (triple definition)"
+    owner: CSA (naming) -> CTO (refactor)
+    effort: "1h"
+    resolution: |
+      brain/master/src/context.rs::RuntimeSio  -> giu la SIO canonical (day du)
+      brain/runtime/src/lib.rs::RuntimeSio      -> doi ten: InferRequest
+      brain/runtime/src/context.rs             -> audit, xoa neu trung
+    scope: "Thay doi pub use trong runtime/src/lib.rs, update ZeusRouter signature"
+
+  T10:
+    id: "BRAIN-T10"
+    title: "Clean execute/mod.rs â€” xoa dead mod declarations"
+    owner: Cogen
+    effort: "10 min"
+    file: "engine/hace/brain/master/execute/mod.rs"
+    action: >
+      Xoa 'pub mod execute; pub mod checkpoint; pub mod telemetry;'
+      (nhung file vat ly khong ton tai).
+      Giu Checkpoint + TelemetryData empty struct de compile.
+```
+
+---
+
+## IV. COMPILE STATUS PREDICTION
+
+```yaml
+compile_matrix:
+  hace_brain_base:
+    status: COMPILES
+    tests:  7_passing
+    notes:  "Solid ABI â€” do not touch"
+
+  hace_brain_runtime:
+    status: COMPILES_WITH_WARNINGS
+    issues:
+      - "router.rs co BrainRouter â€” khong dung nhung khong block compile"
+      - "bridges/hacedle.rs execute_inference() = byte cast â€” logic wrong nhung compiles"
+      - "bridges/hacetral.rs = let _ = sio stub â€” compiles"
+
+  hace_brain_master:
+    status: COMPILES_PARTIAL
+    issues:
+      - "execute/mod.rs: pub mod execute/checkpoint/telemetry declare files khong ton tai â€” COMPILE ERROR"
+      - "Neu fixed: compiles, nhung execute() void"
+
+  brain_src_orphan:
+    status: NOT_A_CRATE
+    issues:
+      - "Khong co Cargo.toml â€” khong the compile"
+      - "brain_block.rs: compile error (vkm::LayerKv, abi::tensor::ArenaHandle missing)"
+      - "attention.rs: compile error (immutable scores assignment)"
+
+  hace_fem_hacedle:
+    status: COMPILES_PARTIAL
+    issues:
+      - "attention.rs: attention_weighted_sum() compiles nhung output always zero (logic bug)"
+      - "brain/ subdir empty â€” khong co HacedleBrain"
+```
+
+---
+
+## V. E4 READINESS GATE
+
+```yaml
+e4_brain_ready_when:
+  required:
+    - "T1 done (attention fix)"
+    - "T2 done (HacedleBrain basic impl)"
+    - "T3 done (HacedleBridge wired)"
+    - "T4 done (BrainMasterRuntime -> ZeusRuntime)"
+    - "T9 done (RuntimeSio naming resolved)"
+    - "T10 done (execute/mod.rs compile error fixed)"
+
+  optional_before_ship:
+    - "T5 (ProviderFactory fix)"
+    - "T6 (BrainRouter delete)"
+    - "T7 (brain/src orphan delete)"
+
+  e4_mvp_flow_after_T1_T4: |
+    UserPrompt
+      -> SIO (master::RuntimeSio)
+      -> BrainMasterRuntime.execute()
+      -> InferRequest extracted from SIO.intent
+      -> ZeusRuntime.execute(ReasonCtx)
+        -> complexity: Medium -> CeId::Local
+        -> HacedleBrain::reason() [after T2]
+          -> TensorResolver.resolve_attn_q(layer)
+          -> QuantTensorView.dequant()
+          -> ops::attention_forward() [after T1]
+      -> ReasonResult -> SioOutcome
+
+  current_actual_flow: |
+    UserPrompt -> BrainMasterRuntime.execute() -> SioOutcome::default()
+    (VOID â€” nothing executes)
+```
+
+---
+
+## VI. CSA VERDICT
+
+```yaml
+csa_verdict:
+  architecture_design:  "CORRECT â€” BrainKernel/BrainRuntime/ZeusRouter design solid"
+  implementation_state: "BROKEN â€” 4 P0 gaps, 5 P1 gaps block real execution"
+  most_critical_gap:    "GAP-04 (HacedleBrain empty) blocks everything downstream"
+  easiest_win:          "GAP-02 (let mut) â€” 15 min, unblocks all attention output"
+  biggest_waste:        "brain/src/ orphan + ops duplication â€” delete immediately"
+  e4_eta:               "T1+T2+T3+T4+T9+T10 = ~10-12h focused work"
+
+  cto_instruction: |
+    1. STOP building new infrastructure
+    2. FIX existing broken code (T1 -> T2 -> T3 -> T4 in order)
+    3. DELETE duplicates (T6, T7, T8 partial)
+    4. REUSE: hacedle::ops, TensorResolver, QuantTensorView, ZeusRouter
+
+  cogen_instruction: |
+    1. T1 ngay lap tuc (15 min, attention_weighted_sum fix)
+    2. T5 sau T2 (ProviderFactory â€” 30 min)
+    3. T8 sau T7 (matmul.rs vao hacedle/ops)
+    4. T10 ngay (compile error fix â€” 10 min)
+
+sealed: false
+next_checkin: "Sau khi T1+T2+T3 complete"
+```

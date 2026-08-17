@@ -1,0 +1,50 @@
+# Alpha-3 Progress Report - 2026-06-04
+
+```yaml
+header:
+  id: ALPHA3_PROGRESS_20260604
+  intent: REPORT
+  status: IN_PROGRESS
+```
+
+## Blocker Status
+
+| Blocker | Status | Action |
+|---------|--------|--------|
+| #1 main.rs bypass | ✅ RESOLVED | Removed direct handle_brain |
+| #2 rr/cli parse_family | ✅ RESOLVED | Added Brain family |
+| #3 executor wiring | ⚠️ PARTIAL | Stub with TODO markers |
+
+## Slice Status
+
+| Slice | Status | Milestone |
+|-------|--------|-----------|
+| A - GGUF model verify | ✅ DONE | Stub verified |
+| B - Replay integration | ⏳ PENDING | |
+| C - First logits | ⏳ PENDING | |
+
+## Alpha-3 Status Update
+
+```yaml
+brain:
+  cli: 90
+  io: 100
+  coge: 100
+  kernel: 60
+  provider: 60
+  inference: 55
+  runtime_chain: 80
+
+real_inference: 20
+
+overall: 75
+```
+
+## Next Actions
+
+```yaml
+priority:
+  - wire_gguf_loader_stubs_to_real
+  - implement_model_verify_flow
+  - implement_replay_flow
+```

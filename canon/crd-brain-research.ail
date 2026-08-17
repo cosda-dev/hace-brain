@@ -1,0 +1,171 @@
+---
+# CRD BRAIN RESEARCH â€” v2 (Era-5 Update)
+# Canon Knowledge Artifact â€” hace Dynamic Cognitive Runtime
+
+```yaml
+artifact_id: crd-brain-research-v2
+supersedes: crd-brain-research-v1.ail
+change_reason: Supreme Alliance Directive cmd.zeus.soul-sovereignty.v1 (CGE)
+delta_summary: "Era-5 pivot: freeze LoRA tuning pipelines; pivot to SKB+SIO+CAT+Coge+CapacityOrch"
+datetime: "2026-06-05"
+locale: en-core / vi-85
+format: AIL
+```
+
+---
+
+## DELTA: FROZEN SECTIONS (v1 -> v2)
+
+```yaml
+frozen_from_v1:
+  R3_dynamic_brain_lro_tiers:
+    status: FROZEN_RESEARCH
+    note: >
+      LoRA adapter loading, DoRA, SLoRA remain structurally intact but
+      tuning pipelines and adapter injection scripts are FROZEN per era-5 directive.
+      Existing fem/lora, fem/kvm skeleton code preserved â€” NOT deleted.
+      Active development HALTED until era-5 stack (CAT+Coge+SKB) ships.
+
+  R6_lro_format_spec:
+    status: FROZEN_RESEARCH
+    note: LRO format spec valid for future era when SKB+CAT ship and LRO resumes.
+
+  R9_kv_cache_fusion:
+    status: FROZEN_RESEARCH
+    note: KV fusion blocked on LoRA adapter switch â€” frozen with LoRA.
+```
+
+---
+
+## ERA-5 COGNITIVE MODEL (replaces R2 tier model)
+
+```yaml
+era_5_separation:
+
+  Brain_Zeus:
+    role: stateless_reasoning_engine
+    owns: base_gguf + cosda_lro (SKILL patterns, NOT live facts)
+    does: HOW to think â€” ontology, reasoning chains, terminology
+    does_NOT: hold memory, hold facts, make authority decisions
+
+  SKB_Memory:
+    role: live_knowledge_store
+    owns: registry, runtime_state, actor_data, policy_snapshot
+    does: WHAT is true now â€” dynamic, queryable, hot-updated
+    does_NOT: teach reasoning patterns (that is LRO domain)
+
+  Soul_Authority:
+    role: identity_and_purpose_layer
+    owns: values, charter, ARA, NKC conformance rules, mission
+    does: WHY we act â€” authority boundary, purpose, governance
+    does_NOT: store facts, do reasoning
+
+  Coge_Router:
+    role: edge_brain_protocol_adapter
+    does: NIO->SIO, CAT parse, capacity estimate, SKB hydrate, route
+    does_NOT: deep inference, hold memory, own policy
+
+  CAT_Contract:
+    role: executable_sio_action_unit
+    format: AIL (.cat.ail) â€” Markdown + YAML
+    does: describe one action for Human + Alliag + Runtime simultaneously
+
+lro_skb_boundary_rule:
+  lro_encodes: "skills (HOW to reason) â€” stable, changes yearly"
+  skb_encodes: "facts (WHAT IS TRUE NOW) â€” live, changes daily"
+  violation: "never train live facts into LoRA weights"
+```
+
+---
+
+## ERA-5 FLOW (replaces R1 formula)
+
+```
+MindOutput = Coge(NIO->SIO) + Capacity(tier) + Zeus(base+cosda.lro) + SKB(live) + Soul(authority)
+
+Runtime flow:
+HI -> NIO -> Coge -> SIO_v1 -> CapacityOrch -> BrainTier
+                            -> SkbHydrator  -> SIO_v2
+                                           -> Zeus(tier) -> TeleportPlan
+                                                        -> Aura decompose
+                                                        -> Sub-agents
+                                                        -> NKC Trial
+                                                        -> Coge render -> HI
+```
+
+---
+
+## RETAINED FROM v1 (unchanged)
+
+```yaml
+retained:
+  R4_GGUF_FORMAT:       ACTIVE â€” GGUF parsing still required for base model loading
+  R5_OPERATOR_GRAPH:    ACTIVE â€” attention/rmsnorm/rope/silu/matmul still needed
+  R7_SKB_STRUCTURE:     ACTIVE â€” Skill/Knowledge/Memory tripartite enhanced by era-5
+  R8_SIO_TRANSPORT:     ACTIVE â€” SIO v1/v2/TeleportPlan contracts unchanged
+  R10_ALPHA3_GATES:     ACTIVE â€” G1(GGUF parity) still prerequisite for any brain tier
+
+alpha3_priority_reorder:
+  old_P0: LoRA runtime truth
+  new_P0: CAT parser complete + Coge dispatcher real
+  new_P1: SKB hydration wire (soul/orch -> fem/skb)
+  new_P2: Capacity Orch (no_std brain tier gate)
+  new_P3: Soul Registry hot-plug (multi-profile)
+  new_P4: GGUF runtime truth (still required, now P4 not P0)
+  rationale: >
+    CAT+Coge+SKB must ship before LoRA overlay is meaningful.
+    A routing layer that cannot CAT-dispatch or SKB-hydrate
+    makes the LoRA overlay unreachable from the runtime stack.
+```
+
+---
+
+## CAT TRAINING PRIMITIVE (new section)
+
+```yaml
+insight: >
+  Each .cat.ail file is a structured SFT training primitive for cosda.lro.
+  CAT naturally generates: Instruction + Reasoning Chain + Output triple.
+
+example:
+  cat: {namespace: brain, command: model.verify, input: {path: qwen.gguf}}
+  instruction: "Verify GGUF model integrity at path qwen.gguf"
+  reasoning: |
+    Step 1: Parse GGUF magic (0x46554747) and version
+    Step 2: Walk tensor_info[] verify offsets aligned
+    Step 3: Compute SHA256 FAH hash
+    Step 4: Check ZES seal (issuer, expiry, parent_hash)
+    Step 5: Return CERTIFIED or REJECTED with cause
+  output: "CERTIFIED â€” tensors:291, quant:Q4_K_M, fah:PASS, zes:VALID"
+
+lro_training_domains:
+  cosda-cat.lro:     CAT schema, AIL format, SIO ontology â€” trains CAT reasoning
+  cosda-cona.lro:    CAEM/IPO/PEG execution graph â€” trains execution flow reasoning
+  cosda-nkc.lro:     NKC 1.5.0, ARA, authority flow â€” trains conformance reasoning
+  cosda-rc.lro:      Rule Contract 2.4.0, DIM â€” trains contract reasoning
+  # above are SKILL adapters â€” stable, trained annually from canon corpus
+```
+
+---
+
+## CAPACITY ORCH MODEL (new section)
+
+```yaml
+tiers:
+  nano:  {model: Qwen2.5-0.5B, trigger: "<0.3",  cost: "1x",  use: "parse, render, format, simple CAT"}
+  micro: {model: Qwen3-1.5B,   trigger: "0.3-0.5", cost: "3x",  use: "moderate intent, SKB query"}
+  mini:  {model: Qwen3-3B,     trigger: "0.5-0.7", cost: "6x",  use: "multi-step planning"}
+  macro: {model: Qwen3-7B,     trigger: ">0.7",   cost: "12x", use: "engineering, build, design"}
+  mega:  {model: Qwen3-32B,    trigger: "sovereign", cost: "50x", use: "governance, legal, canon draft"}
+
+expected_distribution: {nano: 90%, micro: 7%, mini: 2%, macro: 0.9%, mega: 0.1%}
+savings_vs_naive_12B:  "~10x cost reduction for typical workload mix"
+```
+
+---
+```yaml
+footer:
+  version: v2
+  supersedes: crd-brain-research-v1.ail (2026-06-04)
+  target: T:/hace/engine/hace/brain/canon/crd-brain-research.ail
+```

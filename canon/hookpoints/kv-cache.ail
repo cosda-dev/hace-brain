@@ -1,0 +1,74 @@
+---
+header:
+  id: HOOKPOINT://brain.kv-cache.v1
+  intent: DECLARE_AUTHORITY_BOUNDARY
+  status: CANONICAL
+  authority: CSA
+  locale: en-core
+  version: "1.0.0"
+  datetime: "2025-06-05"
+---
+
+# Hookpoint: KV Cache
+
+```yaml
+hookpoint:
+  id: brain.kv-cache
+  name: Brain KV Cache Hookpoint
+
+authority:
+  owner: hacedle
+  mutable: true
+  steward: brain/master
+
+dependencies:
+  - brain.gguf.loader
+
+input:
+  - token_ids:
+      type: array
+      element_type: u32
+  - position:
+      type: u32
+
+output:
+  - kv_state:
+      type: reference
+
+methods:
+  - name: prefill
+    signature: prefill(&mut self, token_ids: &[u32])
+  - name: decode
+    signature: decode(&mut self, token_id: u32) -> Vec<f32>
+  - name: get_cache
+    signature: get_cache(layer: usize) -> Option<&KvCachePage>
+
+contracts:
+  - contract_id: KV_CACHE_V1
+    spec: >
+      KV cache must:
+      - Store key/value tensors per layer
+      - Support prefill (full context)
+      - Support decode (single token step)
+      - Be thread-safe for multi-session
+
+providers:
+  preferred:
+    - path: fem/hacedle/src/x/loader/kvm/
+      struct: KvCache
+      status: NEEDS_IMPLEMENTATION
+
+restrictions:
+  - id: RES_001
+    rule: no_stub_kv_cache
+    description: >
+      KV cache MUST be real implementation.
+      Stub will break all multi-turn inference.
+
+ownership:
+  owner: hacedle
+  steward: brain/master
+  consumers:
+    - brain/inference
+    - brain/session
+```

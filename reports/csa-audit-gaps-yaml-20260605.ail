@@ -1,0 +1,105 @@
+---
+header:
+  id: AIL://brain.reports.csa.gaps_yaml.20260605
+  intent: CSA_GAP_INVENTORY
+  status: ACTIVE
+  authority: CSA
+  locale: en
+  version: "1.0.0"
+  datetime: "2026-06-05T14:30:00+07:00"
+---
+
+# CSA Audit Gaps - YAML Structured Report
+
+```yaml
+gaps:
+  - id: GAP-001
+    title: "Import Path Verification"
+    status: RESOLVED
+    location: "brain/master/src/provider/gguf/loader.rs:6-7"
+    finding: "GgufLoader::load_std() exists in hacedle/loader.rs:44 and is correctly called"
+    check_required: false
+
+  - id: GAP-002
+    title: "Sampler Integration"
+    status: TODO
+    priority: HIGH
+    location: "brain/master/src/runtime/logits.rs"
+    finding: "Logits::from_kv() returns hardcoded dummy values instead of real inference"
+    recommendation: "Delegate to hacedle::InferenceEngine.infer_logits()"
+
+- id: GAP-003
+    title: "Weight Loading"
+    status: TODO
+    priority: HIGH
+    location: "fem/hacedle/src/x/provider/candle/weight loading"
+    finding: "LMHead, EmbedEngine use empty weight vectors - no tensor data loaded"
+    recommendation: "Load tensor weights from GGUF into inference structs via build_registry()"
+
+  - id: GAP-004
+    title: "KV Cache Integration"
+    status: TODO
+    priority: MEDIUM
+    location: "brain/master/src/runtime/kv_cache.rs, prefill.rs"
+    finding: "KvCache exists but not wired into inference pipeline"
+    recommendation: "Add KV cache state to TransformerLayer forward pass"
+
+  - id: GAP-005
+    title: "Brain/Master KV Cache Integration"
+    status: TODO
+    priority: MEDIUM
+    location: "brain/master/src/runtime/kv_cache.rs, prefill.rs"
+    finding: "KvCache struct exists but not wired to inference pipeline"
+    recommendation: "Add KV cache state to TransformerLayer forward pass"
+
+  - id: GAP-006
+    title: "SioOutcome Type Mismatch (CRITICAL)"
+    status: TODO
+    priority: CRITICAL
+    location: "brain/master/src/provider/candle.rs:93"
+    finding: "candle.rs:93 uses SioOutcome::Success { text, tokens } (enum syntax) but outcome.rs:6 defines SioOutcome as struct with fields: status, result, answer, confidence, ..."
+    recommendation: "Change candle.rs:93 to construct SioOutcome struct with answer=response.text, status=SUCCESS, etc."
+
+verified_paths:
+  - path: "fem/hacedle/src/x/loader/gguf/loader_std.rs"
+    test: "GGUF magic validation, tensor count parsing"
+    status: OK
+    evidence: "Magic=GGUF, Version=3, Tensors=290"
+
+  - path: "fem/hacedle/src/x/loader/gguf/tensor_index.rs"
+    test: "Tensor index parsing"
+    status: OK
+    evidence: "Parses tensor name, shape, offset, dtype"
+
+  - path: "fem/hacedle/src/x/loader/gguf/model_spec.rs"
+    test: "ModelSpec extraction"
+    status: OK
+    evidence: "Reads arch, context_length, n_layer from metadata"
+
+  - path: "fem/hacedle/src/x/provider/candle/inference.rs"
+    test: "Inference chain"
+    status: PARTIAL
+    evidence: "LogitsProcessor integrated, weights still stub"
+
+  - path: "brain/master/src/provider/gguf/loader.rs"
+    test: "Delegation"
+    status: OK
+    evidence: "Calls hacedle::GgufLoader, hacedle::ModelSpec"
+```
+
+---
+
+## Gap Priority Matrix
+
+| Priority | Gap | Impact | Effort |
+|----------|-----|--------|--------|
+| CRITICAL | SioOutcome Type Mismatch | Blocks compilation | LOW |
+| HIGH | Weight Loading | Blocks real inference | HIGH |
+| HIGH | Brain Logits Stub | Blocks M5 token output | MEDIUM |
+| MEDIUM | KV Cache Integration | Multi-turn context | MEDIUM |
+| LOW | GGUF Tokenizer vocab | Better tokenization | LOW |
+
+**Critical Path**: candle.rs must compile before brain can execute
+
+Report by CSA - Chief Solution Architect
+2026-06-05T14:30:00+07:00

@@ -1,0 +1,139 @@
+---
+header:
+  id: AIL://brain.canon.providers.v2
+  intent: DECLARE_CANON
+  status: ACTIVE
+  version: "2.0.0"
+  authority: CSA
+  updated: "2026-06-06"
+  prev_version: "1.0.0 (2026-06-04) â€” stale, predated CE.Hacedle gap finding"
+---
+
+# Brain Providers â€” Canonical CE Registry
+
+## Principle
+
+```yaml
+provider_model: |
+  BrainProvider  = high-level SIO executor  (brain/master/provider/)
+  BrainRuntime   = low-level CE trait        (brain/base â€” BrainKernel + BrainRuntime)
+  
+  brain/master ProviderRegistry selects BrainProvider by Capability.
+  BrainProvider.execute() delegates to ZeusRuntime (BrainKernel trait).
+  ZeusRuntime.route_and_execute() selects CE by classify_complexity().
+  
+  Provider hierarchy (abstract â†’ concrete):
+    BrainProvider (trait)
+      â”œâ”€â”€ MockProvider      (tests only)
+      â”œâ”€â”€ AlgoProvider      (CE.Algo â€” WORKS)
+      â”œâ”€â”€ CandleProvider    (CE.Hacedle â€” STUB execute())
+      â”œâ”€â”€ LlamaProvider     (CE.Llama  â€” STUB execute())
+      â””â”€â”€ RemoteProvider    (CE.Remote â€” E4.5, not yet)
+```
+
+---
+
+## CE Status Matrix
+
+```yaml
+ce_status:
+  CE.Algo:
+    impl_path:   "brain/base/src/lib.rs::AlgoParticle"
+    trait:       "BrainKernel"
+    status:      WORKS
+    produces:    "deterministic rule-match or echo, zero tokens"
+    when:        "Simple complexity, no model loaded"
+    test:        "cargo test -p hace-brain-base  â€” 7 tests pass"
+
+  CE.Hacedle:
+    impl_path:   "fem/hacedle/src/brain/  (EMPTY DIRECTORY)"
+    trait:       "BrainKernel + BrainRuntime"
+    status:      MISSING
+    gap:         "GAP-T5 â€” HacedleBrain struct not implemented"
+    blocker:     "fem/hacedle/src/brain/mod.rs does not exist"
+    available:   |
+      All ops ready in hacedle:
+        x/loader/gguf/loader_std.rs   (2.31KB)
+        x/loader/gguf/tensor_index.rs (3.68KB)
+        x/provider/candle/{embed,layer,lmhead}.rs
+        ops/{rmsnorm,rope,silu,attention}.rs
+        x/loader/dequant/q4_k.rs
+      Need: HacedleBrain { resolver, model_spec, quant }
+            impl BrainKernel::reason() + BrainRuntime::load()/unload()
+    effort:      "4-6h â€” T3C priority T1 after tokenizer"
+
+  CE.Llama:
+    impl_path:   "fem/llama/src/runtime.rs (stub)"
+    status:      STUB
+    gap:         "LlamaBrain::reason() = Ok(ReasonResult::default())"
+    when:        "E4.5 â€” llama.cpp backend"
+
+  CE.Remote:
+    impl_path:   "brain/runtime/src/bridges/"
+    status:      SKELETON
+    when:        "E4.5 cloud RACEX"
+```
+
+---
+
+## Provider Violations (active)
+
+```yaml
+violations:
+  PROV-V01:
+    file:    "brain/master/src/provider/factory.rs"
+    finding: "ProviderFactory::create() always returns DummyProvider"
+    code: |
+      pub fn create(_cfg: &ProviderConfig) -> Option<Arc<dyn BrainProvider>> {
+          Some(Arc::new(DummyProvider::default()))  // ignores cfg.provider_type
+      }
+    impact: "CandleProvider + LlamaProvider are NEVER instantiated"
+    fix: |
+      match cfg.provider_type {
+          ProviderType::Candle => Some(Arc::new(CandleProvider::new())),
+          ProviderType::Llama  => Some(Arc::new(LlamaProvider::new())),
+          _                    => None,
+      }
+    owner: Cogen
+    effort: "15 min"
+
+  PROV-V02:
+    file:    "brain/master/src/provider/candle/mod.rs"
+    finding: "CandleProvider::execute() = Ok(SioOutcome::default())"
+    impact:  "Even if factory creates CandleProvider, execute() is stub"
+    fix:     "Wire execute() to ZeusRuntime { local_ce: HacedleBrain } after CE.Hacedle done"
+    blocking_on: "CE.Hacedle (GAP-T5)"
+
+  PROV-V03:
+    file:    "brain/master/src/lib.rs"
+    finding: "BrainMasterRuntime::execute() = Ok(SioOutcome::default())"
+    impact:  "Top-level dispatch is void â€” all providers unreachable"
+    fix:     "Implement InferenceEngine wire (GAP-T1)"
+```
+
+---
+
+## Provider selection (target flow)
+
+```yaml
+target_flow: |
+  BrainMasterRuntime::execute(sio)
+    |
+    InferRequest::from_sio(&sio)
+    |
+    ProviderSelector::select(req.required_capability)
+      -> ProviderType::Candle  (if model loaded + CE.Hacedle ready)
+      -> ProviderType::Algo    (fallback always available)
+    |
+    ProviderRegistry::get(provider_id) -> Arc<dyn BrainProvider>
+    |
+    provider.execute(&sio) -> SioOutcome
+      -> CandleProvider: extract prompt -> ZeusRuntime -> HacedleBrain
+      -> AlgoProvider:   extract prompt -> AlgoParticle
+
+capability_map:
+  Capability::Inference: "CandleProvider or LlamaProvider"
+  Capability::Embedding: "CandleProvider (embed only)"
+  Capability::Reasoning: "AlgoProvider (rule-based)"
+  Capability::Remote:    "RemoteProvider (E4.5)"
+```

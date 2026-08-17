@@ -1,0 +1,182 @@
+---
+header:
+  id: AIL://brain.canon.brain.v2
+  intent: DECLARE_CANON
+  status: ACTIVE
+  version: "2.0.0"
+  authority: CSA
+  updated: "2026-06-05"
+  locale: vi-85
+---
+
+# Brain Runtime â€” Canonical Architecture
+
+## Core Principle
+
+```yaml
+brain_is: "Zeus â€” stateless compute fabric"
+brain_is_not: "model storage, tokenizer, session memory, governance"
+
+ownership:
+  brain/master: "orchestration layer â€” dispatch, session, outcome"
+  fem/hacedle:  "CE execution â€” GGUF I/O, tensor ops, candle inference"
+  brain/base:   "ABI â€” BrainKernel + BrainRuntime traits (stable, do not modify)"
+  brain/hooks:  "hook registry â€” E4 pass-through, E5 governance"
+
+stateless_guarantee: |
+  Brain receives ReasonCtx, returns ReasonResult.
+  No internal mutable state between calls.
+  Memory (KV cache) is owned by session layer, injected per call.
+```
+
+---
+
+## Layer Map
+
+```yaml
+layers:
+  L0_abi:
+    path: brain/base/src/lib.rs
+    exports: [BrainKernel, BrainRuntime, ReasonCtx, ReasonResult, AlgoParticle]
+    stability: FROZEN â€” no change without CSA+CRD sign-off
+
+  L1_runtime:
+    path: brain/runtime/src/lib.rs
+    exports: [ZeusRuntime, ZeusRouter, ZeusConfig, CeId]
+    ce_dispatch: "classify_complexity() -> CeId::{Algo, Local, Remote}"
+    stability: STABLE
+
+  L2_master:
+    path: brain/master/src/
+    role: "SIO-level orchestration: sio -> InferRequest -> execute -> SioOutcome"
+    key_files:
+      lib.rs:              "BrainMasterRuntime::execute()"
+      inference/engine.rs: "InferenceEngine::infer() â€” THE missing link"
+      kernel/hacedle.rs:   "HacedleKernel bridge to fem/hacedle candle chain"
+      tokenizer/mod.rs:    "BrainTokenizer â€” MUST use tokenizers crate"
+      runtime/kv_cache.rs: "KvCache struct + prefill()"
+      runtime/logits.rs:   "TopK sampler"
+      provider/gguf/:      "GgufLoader â€” MUST delegate to hacedle::loader_std"
+
+  L3_ce:
+    path: fem/hacedle/src/x/
+    role: "CE.Hacedle â€” inference ops, OWNED BY hacedle team"
+    do_not_duplicate:
+      - "loader/gguf/* â€” GGUF parsing"
+      - "loader/dequant/* â€” quantization"
+      - "provider/candle/* â€” transformer layers, lmhead"
+      - "ops/* â€” rmsnorm, rope, silu, attention"
+```
+
+---
+
+## Inference Chain (target state)
+
+```text
+hace brain prompt "hello" --model qwen.gguf
+
+CLI (brain/cli/src/prompt.rs)
+  |  PromptArgs { text, model_path, max_tokens }
+  v
+BrainMasterRuntime::execute(sio)          [brain/master/src/lib.rs]
+  |  extract InferRequest from SIO
+  v
+InferenceEngine::infer(req)               [brain/master/src/inference/engine.rs]
+  |
+  +-> GgufLoader::load(model_path)        [brain/master/src/provider/gguf/loader.rs]
+  |     DELEGATES TO: hacedle::GgufLoaderStd::load()
+  |     OUTPUT: LoadedModel { tensor_index, model_spec, mmap_handle }
+  |
+  +-> BrainTokenizer::encode(text)        [brain/master/src/tokenizer/mod.rs]
+  |     SOURCE: tokenizers crate + GGUF metadata tokens/merges
+  |     OUTPUT: Vec<u32>  e.g. "hello" -> [9707]
+  |
+  +-> KvCache::prefill(token_ids, model)  [brain/master/src/runtime/kv_cache.rs]
+  |     ALLOCATES: [n_layers][seq_len][n_kv_heads][head_dim] f32
+  |
+  +-> HacedleKernel::forward(ctx, kv)    [brain/master/src/kernel/hacedle.rs]
+  |     DELEGATES TO: hacedle::candle::{embed, layer[0..n], lmhead}
+  |     OUTPUT: logits Vec<f32>[vocab_size]
+  |
+  +-> Logits::top_k(logits, k=5)         [brain/master/src/runtime/logits.rs]
+  |     OUTPUT: Vec<(token_id, score)>
+  |
+  +-> BrainTokenizer::decode([next_id])
+        OUTPUT: " world"
+
+SioOutcome { tokens: [9707, 1917], text: "hello world", latency_ms: 42 }
+```
+
+---
+
+## CE Registry
+
+```yaml
+ce_registry:
+  CE.Algo:
+    impl: AlgoParticle
+    path: brain/base/src/lib.rs
+    use_when: "Simple actions, no model needed"
+    output: "deterministic, zero tokens"
+
+  CE.Hacedle:
+    impl: HacedleBrain (MISSING â€” fem/hacedle/src/brain/ empty)
+    path: fem/hacedle/src/brain/mod.rs
+    use_when: "Edge inference, local GGUF, no_std capable"
+    engine: "Candle (fem/hacedle/src/x/provider/candle/)"
+    status: GAP â€” implement HacedleBrain trait
+
+  CE.Llama:
+    impl: LlamaBrain (stub)
+    path: fem/llama/src/
+    use_when: "llama.cpp backend, higher quality"
+    status: FUTURE
+
+  CE.Remote:
+    impl: RemoteBrain (stub)
+    path: brain/runtime/src/bridges/
+    use_when: "Cloud RACEX, expert brain pool"
+    status: E4.5
+```
+
+---
+
+## Error Boundaries
+
+```yaml
+error_map:
+  GgufLoad:
+    triggers: [file_not_found, bad_magic, unsupported_version, oom]
+    handler: "BrainError::ModelUnavailable â€” propagate to CLI, print path"
+    no_panic: true
+
+  Tokenize:
+    triggers: [vocab_not_loaded, unknown_token, utf8_error]
+    handler: "BrainError::ReasonFailed â€” fallback to ASCII if cli --raw-tokens"
+    no_panic: true
+
+  KvCache:
+    triggers: [alloc_fail, seq_too_long]
+    handler: "BrainError::ContextTooLarge { tokens } â€” return before forward"
+    no_panic: true
+
+  Inference:
+    triggers: [tensor_shape_mismatch, nan_logits, timeout]
+    handler: "BrainError::ReasonFailed â€” log + return Err"
+    no_panic: true
+```
+
+---
+
+## Active GAPs (as of 2026-06-05)
+
+```yaml
+gaps:
+  GAP-T1: "inference/engine.rs unchanged 0.68KB â€” dispatch still void"
+  GAP-T2: "kernel/hacedle.rs 1.74KB â€” not wired to hacedle candle chain"
+  GAP-T3: "tokenizer 3.37KB custom â€” NOT BPE, must use tokenizers crate"
+  GAP-T4: "kv_cache.rs 1.0KB â€” struct only, no prefill allocation"
+  GAP-T5: "fem/hacedle/src/brain/ EMPTY â€” HacedleBrain not implemented"
+  GAP-T6: "coge/ orphan files outside src/ â€” crate does not compile"
+  GAP-T7: "brain/src/ no Cargo.toml â€” orphan, untestable"
+```

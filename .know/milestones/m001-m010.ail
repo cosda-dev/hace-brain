@@ -1,0 +1,84 @@
+# Milestones M001-M010 - Alpha-3 to Alpha-4
+
+```yaml
+header:
+  id: MILESTONE://brain.m001-m010
+```
+
+## M001 - Stop Building New FEMs
+```yaml
+done: true
+blocked: SKB, Soul, Capacity Orch, Zeus Cascade
+focus: GGUF loader + tokenizer
+```
+
+## M002 - GGUF Metadata Wire
+```yaml
+status: pending
+wire: brain/master/provider/gguf/loader.rs -> hacedle
+acceptance: hace brain model verify model.gguf (real output)
+```
+
+## M003 - Tokenizer Wire
+```yaml
+status: pending
+wire: brain/master/tokenizer/mod.rs -> tokenizers crate
+acceptance: encode("hello") -> real token ids
+```
+
+## M004 - KV Cache Real
+```yaml
+status: pending
+wire: brain/master/runtime/kv_cache.rs
+acceptance: prefill -> cache populated
+```
+
+## M005 - First Real Token
+```yaml
+status: BLOCKED
+dependency: M002 + M003 + M004
+acceptance: 
+  prompt: "Hello"
+  output: "Hello world"
+  source: real GGUF
+```
+
+## M006 - Forward Pass Wire
+```yaml
+status: pending
+wire: brain/master/inference -> hacedle candle
+acceptance: real logits from model
+```
+
+## M007 - Replay Integration
+```yaml
+status: pending
+wire: replay.rs -> session
+acceptance: replay save/load/run
+```
+
+## M008 - First Multi-Model
+```yaml
+status: pending
+models: [Qwen2.5-0.5B, Phi-3-mini, Llama-nano]
+acceptance: all models verify + tokenize + infer
+```
+
+## M009 - CAT + Coge Runtime
+```yaml
+status: pending
+wire: cat_dispatcher -> BrainTokenizer
+acceptance: SIO currency working
+```
+
+## M010 - Alpha-3 Close
+```yaml
+status: pending
+gates: [verify, tokenizer, kv_cache, logits, first_token, replay]
+```
+
+## Critical Path
+```mermaid
+graph LR
+  M002 --> M003 --> M004 --> M005
+```
